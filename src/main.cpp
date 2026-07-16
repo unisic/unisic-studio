@@ -1,4 +1,8 @@
 #include "StudioApp.h"
+#include "project/StudioProject.h"
+#include "project/StyleModel.h"
+#include "media/VideoProbe.h"
+#include "render/ExportController.h"
 #include <ConfigPath.h>              // kit: UnisicKit::setConfigName
 #include <theme/IconImageProvider.h> // kit: image://icon provider
 #include <QApplication>
@@ -234,6 +238,93 @@ int main(int argc, char *argv[])
                 });
             }
             QTimer::singleShot(0, &studio, [&studio, file] { studio.importFile(file); });
+        }
+    }
+
+    // Hidden dev aid: `--export-test <in> <out>` drives the FULL offscreen export
+    // headlessly — probe → project → apply a non-default style → export MP4
+    // 1280x720@30 (default quality) → exit 0 on success, 1 on failure. It never
+    // opens an editor window, so it exercises exactly the render/export path.
+    // Runs on a live Wayland session (offscreen QPA cannot init the GL RHI on many
+    // Mesa/EGL stacks — the documented sharp edge in RenderPipeline).
+    {
+        const QStringList args = app.arguments();
+        const int idx = args.indexOf(QStringLiteral("--export-test"));
+        if (idx >= 0 && idx + 2 < args.size()) {
+            const QString in = args.at(idx + 1);
+            const QString out = args.at(idx + 2);
+            // Optional: `--cancel-ms <n>` cancels the export n ms after it starts,
+            // then exits 0 once teardown settles — exercises the cancel path
+            // (no orphan ffmpeg, partial output deleted).
+            int cancelMs = 0;
+            const int ci = args.indexOf(QStringLiteral("--cancel-ms"));
+            if (ci >= 0 && ci + 1 < args.size())
+                cancelMs = args.at(ci + 1).toInt();
+            QString fmt = QStringLiteral("mp4");
+            const int fi = args.indexOf(QStringLiteral("--format"));
+            if (fi >= 0 && fi + 1 < args.size())
+                fmt = args.at(fi + 1);
+            QTimer::singleShot(0, &app, [in, out, cancelMs, fmt] {
+                auto *probe = new VideoProbe(qApp);
+                QObject::connect(probe, &VideoProbe::failed, qApp, [](const QString &r) {
+                    fprintf(stderr, "export-test: probe failed: %s\n", qPrintable(r));
+                    fflush(stderr);
+                    QCoreApplication::exit(1);
+                });
+                QObject::connect(
+                    probe, &VideoProbe::probed, qApp,
+                    [in, out, cancelMs, fmt](qint64 durationMs, double fps, const QSize &size) {
+                        auto *p = new StudioProject(qApp);
+                        p->setVideoAbsPath(in);
+                        p->setDurationMs(durationMs);
+                        p->setFps(fps);
+                        p->setVideoSize(size);
+                        // A clearly non-default style so the pixel check can prove
+                        // the composition (not the raw video) was rendered.
+                        StyleModel *st = p->style();
+                        st->setPaddingPct(12);
+                        st->setCornerRadius(20);
+                        st->setBackgroundType(QStringLiteral("gradient"));
+                        st->setGradientStart(QColor(0xE0, 0x10, 0x40));
+                        st->setGradientEnd(QColor(0x10, 0x20, 0xE0));
+
+                        auto *ex = new ExportController(qApp);
+                        ex->setFormat(fmt);
+                        ex->setResolution(QStringLiteral("custom"));
+                        ex->setCustomWidth(1280);
+                        ex->setCustomHeight(720);
+                        ex->setFpsMode(QStringLiteral("30"));
+                        ex->setOutputPath(out);
+                        QObject::connect(ex, &ExportController::stateChanged, qApp, [ex] {
+                            if (ex->state() == ExportController::Done) {
+                                fprintf(stderr, "export-test: OK\n");
+                                fflush(stderr);
+                                QCoreApplication::exit(0);
+                            } else if (ex->state() == ExportController::Error) {
+                                fprintf(stderr, "export-test: FAILED: %s\n",
+                                        qPrintable(ex->errorString()));
+                                fflush(stderr);
+                                QCoreApplication::exit(1);
+                            }
+                        });
+                        ex->start(p);
+                        if (cancelMs > 0) {
+                            QTimer::singleShot(cancelMs, ex, [ex] {
+                                fprintf(stderr, "export-test: cancelling\n");
+                                fflush(stderr);
+                                ex->cancel();
+                            });
+                            // Give the non-blocking encoder teardown (SIGTERM →
+                            // SIGKILL after 1 s) time to reap before we exit.
+                            QTimer::singleShot(cancelMs + 2500, qApp, [] {
+                                fprintf(stderr, "export-test: cancelled-clean\n");
+                                fflush(stderr);
+                                QCoreApplication::exit(0);
+                            });
+                        }
+                    });
+                probe->probe(in);
+            });
         }
     }
 
