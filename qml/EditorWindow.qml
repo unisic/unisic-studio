@@ -71,18 +71,6 @@ Window {
         }
     }
 
-    // A disabled action button that still drives a hover tooltip (a kit UButton
-    // with enabled:false disables its own MouseArea).
-    component DisabledAction: Item {
-        property alias text: b.text
-        property string tip: ""
-        implicitWidth: b.implicitWidth
-        implicitHeight: b.implicitHeight
-        UButton { id: b; anchors.centerIn: parent; variant: "filled"; enabled: false }
-        MouseArea { id: hov; anchors.fill: parent; hoverEnabled: true }
-        UHoverTip { anchor: parent; text: tip; show: hov.containsMouse }
-    }
-
     // ---- Custom title bar (frameless) --------------------------------------
     Rectangle {
         id: titleBar
@@ -210,10 +198,17 @@ Window {
                     onClicked: if (editorProject) Studio.saveProject(editorProject)
                 }
 
-                DisabledAction {
+                UButton {
                     anchors.verticalCenter: parent.verticalCenter
+                    variant: "filled"
+                    compact: true
                     text: qsTr("Export")
-                    tip: qsTr("Coming soon")
+                    // One export at a time: disabled while the dialog is running.
+                    enabled: editorProject !== null && !exportDialog.running
+                    onClicked: {
+                        exportDialog.project = editorProject
+                        exportDialog.open()
+                    }
                 }
             }
         }
@@ -306,6 +301,11 @@ Window {
                 font.pixelSize: Theme.fontS
             }
         }
+    }
+
+    // Export modal (owns its own ExportController + offscreen decode/render).
+    ExportDialog {
+        id: exportDialog
     }
 
     // Themed confirm on closing a dirty project (kit dialog, not QMessageBox).
