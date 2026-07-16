@@ -1,0 +1,3 @@
+build/
+*.user
+.claude/settings.local.json
