@@ -29,6 +29,14 @@ qt_add_executable(unisic-studio
     src/main.cpp
     src/StudioApp.h src/StudioApp.cpp
     src/StudioSettings.h src/StudioSettings.cpp
+    # Recent-projects index + per-window editor lifecycle. Focused helpers the
+    # facade wires up (keeping StudioApp thin).
+    src/RecentProjects.h src/RecentProjects.cpp
+    src/EditorWindowManager.h src/EditorWindowManager.cpp
+    # Media helpers: async ffprobe metadata + ffmpeg poster-frame extraction.
+    # ffmpeg/ffprobe are shelled out (QStandardPaths-detected), never linked.
+    src/media/VideoProbe.h src/media/VideoProbe.cpp
+    src/media/PosterExtractor.h src/media/PosterExtractor.cpp
     # Project document model (Core+Gui only, no QML — see src/project/*.h). The
     # facade will expose these to QML as QObject* properties; they are not
     # QML_ELEMENT types.
@@ -65,6 +73,12 @@ endif()
 
 set_source_files_properties(qml/StudioMain.qml PROPERTIES QT_QML_SINGLETON_TYPE FALSE)
 
+# PreviewVideo.qml `import QtMultimedia` — a RUNTIME-only plugin gated behind
+# Studio.capVideoPlayback. Skip ahead-of-time cachegen so a build on a machine
+# without the QtMultimedia QML module still succeeds (the import is resolved
+# lazily when the Loader instantiates it, or never).
+set_source_files_properties(qml/composition/PreviewVideo.qml PROPERTIES QT_QML_SKIP_CACHEGEN ON)
+
 qt_add_qml_module(unisic-studio
     URI UnisicStudio
     VERSION 1.0
@@ -74,10 +88,14 @@ qt_add_qml_module(unisic-studio
     OUTPUT_DIRECTORY qmlmod/UnisicStudio
     QML_FILES
         qml/StudioMain.qml
+        qml/EditorWindow.qml
+        qml/InspectorPanel.qml
+        qml/composition/CompositionRoot.qml
+        qml/composition/PreviewVideo.qml
 )
 
 # qmltyperegistration includes QML_ELEMENT headers by basename.
-target_include_directories(unisic-studio PRIVATE src src/project)
+target_include_directories(unisic-studio PRIVATE src src/project src/media)
 target_link_libraries(unisic-studio PRIVATE
     Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Quick Qt6::Qml Qt6::QuickControls2
     Qt6::DBus Qt6::Concurrent

@@ -20,6 +20,14 @@ Window {
 
     property int currentPage: 0
 
+    function mmss(ms) {
+        if (isNaN(ms) || ms < 0) ms = 0
+        var s = Math.floor(ms / 1000)
+        var m = Math.floor(s / 60)
+        s = s % 60
+        return (m < 10 ? "0" : "") + m + ":" + (s < 10 ? "0" : "") + s
+    }
+
     // A kit UButton disabled via `enabled: false` also disables its own
     // MouseArea, so it can't drive a hover tooltip. Wrap it: the button shows
     // disabled, an overlaid hover MouseArea drives a UHoverTip explaining when
@@ -134,55 +142,188 @@ Window {
         }
     }
 
-    // Main area: centered empty state.
-    Column {
-        anchors.verticalCenter: parent.verticalCenter
-        // Center within the area to the right of the sidebar.
-        x: sidebar.width + (parent.width - sidebar.width - width) / 2
-        width: Math.min(440, parent.width - sidebar.width - 2 * Theme.spacingXL)
-        spacing: Theme.spacingL
+    // Main area: recent-projects grid, or a centered empty state when none.
+    Item {
+        id: content
+        anchors.left: sidebar.right
+        anchors.top: parent.top
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
 
-        UIcon {
-            name: "monitor"
-            color: Theme.textTertiary
-            size: 72
-            anchors.horizontalCenter: parent.horizontalCenter
+        readonly property bool hasRecents: Studio.recentProjects.length > 0
+
+        // ---- Empty state ----
+        Column {
+            visible: !content.hasRecents
+            anchors.verticalCenter: parent.verticalCenter
+            x: (parent.width - width) / 2
+            width: Math.min(440, parent.width - 2 * Theme.spacingXL)
+            spacing: Theme.spacingL
+
+            UIcon {
+                name: "monitor"
+                color: Theme.textTertiary
+                size: 72
+                anchors.horizontalCenter: parent.horizontalCenter
+            }
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                horizontalAlignment: Text.AlignHCenter
+                text: qsTr("No projects yet")
+                color: Theme.textPrimary
+                font.pixelSize: Theme.fontXL
+                font.weight: Font.Bold
+            }
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                horizontalAlignment: Text.AlignHCenter
+                width: parent.width
+                wrapMode: Text.WordWrap
+                text: qsTr("Record your screen or import a video to get started")
+                color: Theme.textSecondary
+                font.pixelSize: Theme.fontM
+            }
+            Row {
+                anchors.horizontalCenter: parent.horizontalCenter
+                spacing: Theme.spacingM
+                DisabledAction {
+                    text: qsTr("New Recording")
+                    variant: "filled"
+                    iconName: "media-record"
+                    tip: qsTr("Coming in M2")
+                }
+                UButton {
+                    text: qsTr("Import Video…")
+                    variant: "tonal"
+                    iconName: "image"
+                    onClicked: Studio.importVideo()
+                }
+            }
         }
 
-        Text {
-            anchors.horizontalCenter: parent.horizontalCenter
-            horizontalAlignment: Text.AlignHCenter
-            text: qsTr("No projects yet")
-            color: Theme.textPrimary
-            font.pixelSize: Theme.fontXL
-            font.weight: Font.Bold
+        // ---- Recent-projects view ----
+        Item {
+            visible: content.hasRecents
+            anchors.fill: parent
+            anchors.margins: Theme.spacingXL
+
+            Item {
+                id: recentsHeader
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.right: parent.right
+                height: 40
+                Text {
+                    text: qsTr("Projects")
+                    color: Theme.textPrimary
+                    font.pixelSize: Theme.fontXL
+                    font.weight: Font.Bold
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+                Row {
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.right: parent.right
+                    spacing: Theme.spacingM
+                    DisabledAction {
+                        text: qsTr("New Recording")
+                        variant: "ghost"
+                        iconName: "media-record"
+                        tip: qsTr("Coming in M2")
+                    }
+                    UButton {
+                        text: qsTr("Import Video…")
+                        variant: "filled"
+                        iconName: "image"
+                        onClicked: Studio.importVideo()
+                    }
+                }
+            }
+
+            GridView {
+                id: grid
+                anchors.top: recentsHeader.bottom
+                anchors.topMargin: Theme.spacingL
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                clip: true
+                cellWidth: 240
+                cellHeight: 132
+                model: Studio.recentProjects
+
+                delegate: Item {
+                    width: grid.cellWidth
+                    height: grid.cellHeight
+                    UCard {
+                        anchors.fill: parent
+                        anchors.margins: Theme.spacingS
+                        Column {
+                            width: parent.width
+                            spacing: Theme.spacingS
+                            Text {
+                                width: parent.width
+                                text: modelData.name
+                                color: Theme.textPrimary
+                                font.pixelSize: Theme.fontM
+                                font.weight: Font.DemiBold
+                                elide: Text.ElideRight
+                            }
+                            Text {
+                                text: window.mmss(modelData.durationMs)
+                                color: Theme.textSecondary
+                                font.pixelSize: Theme.fontS
+                            }
+                            Text {
+                                text: qsTr("Opened %1").arg(
+                                          new Date(modelData.lastOpened).toLocaleDateString(Qt.locale()))
+                                color: Theme.textTertiary
+                                font.pixelSize: Theme.fontS
+                            }
+                        }
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: Studio.openProject(modelData.path)
+                        }
+                    }
+                }
+            }
         }
+    }
+
+    // Transient toast for Studio.notified (import/save feedback).
+    Rectangle {
+        id: toast
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: Theme.spacingXL
+        radius: Theme.radiusM
+        color: toast.error ? Theme.danger : Theme.surfaceTop
+        opacity: 0
+        visible: opacity > 0
+        width: msg.implicitWidth + 2 * Theme.spacingL
+        height: msg.implicitHeight + 2 * Theme.spacingM
+        z: 100
+
+        property bool error: false
 
         Text {
-            anchors.horizontalCenter: parent.horizontalCenter
-            horizontalAlignment: Text.AlignHCenter
-            width: parent.width
-            wrapMode: Text.WordWrap
-            text: qsTr("Record your screen or import a video to get started")
-            color: Theme.textSecondary
+            id: msg
+            anchors.centerIn: parent
+            color: toast.error ? Theme.dangerText : Theme.textPrimary
             font.pixelSize: Theme.fontM
         }
+        Behavior on opacity { NumberAnimation { duration: Theme.animMed } }
+        Timer { id: toastTimer; interval: 3200; onTriggered: toast.opacity = 0 }
 
-        Row {
-            anchors.horizontalCenter: parent.horizontalCenter
-            spacing: Theme.spacingM
-
-            DisabledAction {
-                text: qsTr("New Recording")
-                variant: "filled"
-                iconName: "media-record"
-                tip: qsTr("Coming in M2")
-            }
-            DisabledAction {
-                text: qsTr("Import Video…")
-                variant: "tonal"
-                iconName: "image"
-                tip: qsTr("Coming in M1")
+        Connections {
+            target: Studio
+            function onNotified(message, isError) {
+                msg.text = message
+                toast.error = isError
+                toast.opacity = 1
+                toastTimer.restart()
             }
         }
     }

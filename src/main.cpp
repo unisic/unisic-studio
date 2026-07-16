@@ -13,6 +13,9 @@
 #include <QTranslator>
 #include <QPointer>
 #include <QSocketNotifier>
+#include <QTimer>
+#include <QDir>
+#include <QScopedPointer>
 #include <csignal>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -158,6 +161,8 @@ int main(int argc, char *argv[])
     // so nullptr here is correct (matches Unisic).
     engine.addImageProvider(QStringLiteral("icon"), new IconImageProvider(nullptr));
     engine.rootContext()->setContextProperty(QStringLiteral("Studio"), &studio);
+    // Give the facade the engine so it can build per-window editor QQmlContexts.
+    studio.setEngine(&engine);
 
     QObject::connect(&engine, &QQmlApplicationEngine::objectCreationFailed, &app,
                      [] { QCoreApplication::exit(1); }, Qt::QueuedConnection);
@@ -178,6 +183,48 @@ int main(int argc, char *argv[])
                 }
             }
         });
+    }
+
+    // Hidden dev aid: `--import <file>` drives the import path programmatically
+    // (headless verification of probe → project → editor, no file dialog).
+    // Deferred to the event loop so the engine and main window are fully up.
+    // With `--selftest` it additionally saves → reloads → compares the project
+    // and exits with a non-zero code on any mismatch (CI/functional check).
+    {
+        const QStringList args = app.arguments();
+        const int idx = args.indexOf(QStringLiteral("--import"));
+        const bool selftest = args.contains(QStringLiteral("--selftest"));
+        if (idx >= 0 && idx + 1 < args.size()) {
+            const QString file = args.at(idx + 1);
+            if (selftest) {
+                QObject::connect(&studio, &StudioApp::imported, &app, [&studio](StudioProject *p) {
+                    // Exercise the REAL facade save path (default projects dir +
+                    // portable relPath + recents index), then reload from the
+                    // path it chose and compare. fprintf (not qInfo) so a system
+                    // qtlogging.ini that mutes *.info can't swallow the result.
+                    const bool saved = studio.saveProject(p);
+                    const QString path = p->property("_sourcePath").toString();
+                    fprintf(stderr, "selftest: editor window created; saveProject=%s (%s)\n",
+                            saved ? "OK" : "FAIL", qPrintable(path));
+                    bool ok = saved && !path.isEmpty();
+                    if (ok) {
+                        QString err;
+                        QScopedPointer<StudioProject> r(StudioProject::load(path, &err));
+                        ok = !r.isNull() && r->durationMs() == p->durationMs()
+                             && r->videoSize() == p->videoSize() && qFuzzyCompare(r->fps(), p->fps())
+                             && !r->videoMissing();
+                        fprintf(stderr,
+                                "selftest: reload=%s (dur=%lldms size=%dx%d fps=%.3f videoResolved=%s)\n",
+                                ok ? "OK" : "MISMATCH", static_cast<long long>(p->durationMs()),
+                                p->videoSize().width(), p->videoSize().height(), p->fps(),
+                                r.isNull() ? "" : qPrintable(r->videoResolved()));
+                    }
+                    fflush(stderr);
+                    QCoreApplication::exit(ok ? 0 : 2);
+                });
+            }
+            QTimer::singleShot(0, &studio, [&studio, file] { studio.importFile(file); });
+        }
     }
 
     return app.exec();
