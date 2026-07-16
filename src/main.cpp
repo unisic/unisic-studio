@@ -6,6 +6,7 @@
 #include <QQmlContext>
 #include <QQuickStyle>
 #include <QQuickWindow>
+#include <QSGRendererInterface>
 #include <QIcon>
 #include <QStyleHints>
 #include <QLocalServer>
@@ -124,6 +125,15 @@ int main(int argc, char *argv[])
                      [serverName] { QLocalServer::removeServer(serverName); });
 
     QQuickStyle::setStyle(QStringLiteral("Basic")); // fully custom look, no platform theme
+
+    // Pin the OpenGL RHI backend for the whole process. The offscreen export
+    // (RenderPipeline) renders CompositionRoot into a QOpenGLFramebufferObject via
+    // the PUBLIC QQuickRenderTarget::fromOpenGLTexture path — the RHI's private
+    // texture-target headers are not shipped in the SDK, and the software backend
+    // cannot render QtQuick.Effects (the composition's shadow/rounded mask). On
+    // Linux/Mesa OpenGL is already the default, so this is consistent, not a
+    // regression, and it must be set before the first QQuickWindow exists.
+    QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
 
     // Resolve missing symbolic icon names against Breeze so tool/action glyphs
     // still appear under desktop themes that lack them; re-pin on runtime

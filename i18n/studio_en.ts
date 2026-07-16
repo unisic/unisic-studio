@@ -9,52 +9,51 @@
         <translation>Untitled</translation>
     </message>
     <message>
-        <location filename="../qml/EditorWindow.qml" line="130"/>
+        <location filename="../qml/EditorWindow.qml" line="118"/>
         <source>Minimize</source>
         <translation>Minimize</translation>
     </message>
     <message>
-        <location filename="../qml/EditorWindow.qml" line="134"/>
+        <location filename="../qml/EditorWindow.qml" line="122"/>
         <source>Maximize</source>
         <translation>Maximize</translation>
     </message>
     <message>
-        <location filename="../qml/EditorWindow.qml" line="140"/>
+        <location filename="../qml/EditorWindow.qml" line="128"/>
         <source>Close</source>
         <translation>Close</translation>
     </message>
     <message>
-        <location filename="../qml/EditorWindow.qml" line="187"/>
+        <location filename="../qml/EditorWindow.qml" line="175"/>
         <source>Aspect</source>
         <translation>Aspect</translation>
     </message>
     <message>
-        <location filename="../qml/EditorWindow.qml" line="196"/>
+        <location filename="../qml/EditorWindow.qml" line="184"/>
         <source>Source</source>
         <translation>Source</translation>
     </message>
     <message>
-        <location filename="../qml/EditorWindow.qml" line="208"/>
+        <location filename="../qml/EditorWindow.qml" line="196"/>
         <source>Save (Ctrl+S)</source>
         <translation>Save (Ctrl+S)</translation>
     </message>
     <message>
-        <location filename="../qml/EditorWindow.qml" line="215"/>
+        <location filename="../qml/EditorWindow.qml" line="205"/>
         <source>Export</source>
         <translation>Export</translation>
     </message>
     <message>
-        <location filename="../qml/EditorWindow.qml" line="216"/>
         <source>Coming soon</source>
-        <translation>Coming soon</translation>
+        <translation type="vanished">Coming soon</translation>
     </message>
     <message>
-        <location filename="../qml/EditorWindow.qml" line="259"/>
+        <location filename="../qml/EditorWindow.qml" line="254"/>
         <source>Preview unavailable</source>
         <translation>Preview unavailable</translation>
     </message>
     <message>
-        <location filename="../qml/EditorWindow.qml" line="282"/>
+        <location filename="../qml/EditorWindow.qml" line="277"/>
         <source>Play / pause</source>
         <translation>Play / pause</translation>
     </message>
@@ -77,6 +76,167 @@
         <location filename="../qml/EditorWindow.qml" line="317"/>
         <source>Keep editing</source>
         <translation>Keep editing</translation>
+    </message>
+</context>
+<context>
+    <name>ExportController</name>
+    <message>
+        <location filename="../src/render/ExportController.cpp" line="108"/>
+        <source>No project to export.</source>
+        <translation>No project to export.</translation>
+    </message>
+    <message>
+        <location filename="../src/render/ExportController.cpp" line="115"/>
+        <source>The source video could not be found.</source>
+        <translation>The source video could not be found.</translation>
+    </message>
+    <message>
+        <location filename="../src/render/ExportController.cpp" line="122"/>
+        <source>Choose a destination file.</source>
+        <translation>Choose a destination file.</translation>
+    </message>
+</context>
+<context>
+    <name>ExportDialog</name>
+    <message>
+        <location filename="../qml/ExportDialog.qml" line="79"/>
+        <source>Export video</source>
+        <translation>Export video</translation>
+    </message>
+    <message>
+        <location filename="../qml/ExportDialog.qml" line="92"/>
+        <source>Format</source>
+        <translation>Format</translation>
+    </message>
+    <message>
+        <location filename="../qml/ExportDialog.qml" line="95"/>
+        <source>MP4 (H.264)</source>
+        <translation>MP4 (H.264)</translation>
+    </message>
+    <message>
+        <location filename="../qml/ExportDialog.qml" line="95"/>
+        <source>WebM (VP9)</source>
+        <translation>WebM (VP9)</translation>
+    </message>
+    <message>
+        <location filename="../qml/ExportDialog.qml" line="102"/>
+        <source>Resolution</source>
+        <translation>Resolution</translation>
+    </message>
+    <message>
+        <location filename="../qml/ExportDialog.qml" line="105"/>
+        <location filename="../qml/ExportDialog.qml" line="142"/>
+        <source>Source</source>
+        <translation>Source</translation>
+    </message>
+    <message>
+        <location filename="../qml/ExportDialog.qml" line="105"/>
+        <source>Custom</source>
+        <translation>Custom</translation>
+    </message>
+    <message>
+        <location filename="../qml/ExportDialog.qml" line="118"/>
+        <source>Width</source>
+        <translation>Width</translation>
+    </message>
+    <message>
+        <location filename="../qml/ExportDialog.qml" line="128"/>
+        <source>Height</source>
+        <translation>Height</translation>
+    </message>
+    <message>
+        <location filename="../qml/ExportDialog.qml" line="139"/>
+        <source>Frame rate</source>
+        <translation>Frame rate</translation>
+    </message>
+    <message>
+        <location filename="../qml/ExportDialog.qml" line="142"/>
+        <source>30 fps</source>
+        <translation>30 fps</translation>
+    </message>
+    <message>
+        <location filename="../qml/ExportDialog.qml" line="142"/>
+        <source>60 fps</source>
+        <translation>60 fps</translation>
+    </message>
+    <message>
+        <location filename="../qml/ExportDialog.qml" line="149"/>
+        <source>Quality: %1%</source>
+        <translation>Quality: %1%</translation>
+    </message>
+    <message>
+        <location filename="../qml/ExportDialog.qml" line="161"/>
+        <source>Destination</source>
+        <translation>Destination</translation>
+    </message>
+    <message>
+        <location filename="../qml/ExportDialog.qml" line="169"/>
+        <source>Choose a destination file…</source>
+        <translation>Choose a destination file…</translation>
+    </message>
+    <message>
+        <location filename="../qml/ExportDialog.qml" line="174"/>
+        <source>Browse…</source>
+        <translation>Browse…</translation>
+    </message>
+    <message>
+        <location filename="../qml/ExportDialog.qml" line="204"/>
+        <source>Export complete</source>
+        <translation>Export complete</translation>
+    </message>
+    <message>
+        <location filename="../qml/ExportDialog.qml" line="204"/>
+        <source>Exporting…</source>
+        <translation>Exporting…</translation>
+    </message>
+    <message>
+        <location filename="../qml/ExportDialog.qml" line="238"/>
+        <source>%1 / %2 frames</source>
+        <translation>%1 / %2 frames</translation>
+    </message>
+    <message>
+        <location filename="../qml/ExportDialog.qml" line="254"/>
+        <location filename="../qml/ExportDialog.qml" line="271"/>
+        <source>Cancel</source>
+        <translation>Cancel</translation>
+    </message>
+    <message>
+        <location filename="../qml/ExportDialog.qml" line="261"/>
+        <source>Export</source>
+        <translation>Export</translation>
+    </message>
+    <message>
+        <location filename="../qml/ExportDialog.qml" line="280"/>
+        <source>Reveal in folder</source>
+        <translation>Reveal in folder</translation>
+    </message>
+    <message>
+        <location filename="../qml/ExportDialog.qml" line="287"/>
+        <source>Close</source>
+        <translation>Close</translation>
+    </message>
+</context>
+<context>
+    <name>FrameDecoder</name>
+    <message>
+        <location filename="../src/render/FrameDecoder.cpp" line="67"/>
+        <source>ffmpeg was not found on your system — install ffmpeg.</source>
+        <translation>ffmpeg was not found on your system — install ffmpeg.</translation>
+    </message>
+    <message>
+        <location filename="../src/render/FrameDecoder.cpp" line="72"/>
+        <source>Invalid frame size for decoding.</source>
+        <translation>Invalid frame size for decoding.</translation>
+    </message>
+    <message>
+        <location filename="../src/render/FrameDecoder.cpp" line="96"/>
+        <source>Could not start ffmpeg: %1</source>
+        <translation>Could not start ffmpeg: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/render/FrameDecoder.cpp" line="177"/>
+        <source>ffmpeg exited with code %1 while decoding.</source>
+        <translation>ffmpeg exited with code %1 while decoding.</translation>
     </message>
 </context>
 <context>
@@ -232,62 +392,125 @@
     </message>
 </context>
 <context>
+    <name>RenderPipeline</name>
+    <message>
+        <location filename="../src/render/RenderPipeline.cpp" line="132"/>
+        <source>Could not create an OpenGL context for rendering.</source>
+        <translation>Could not create an OpenGL context for rendering.</translation>
+    </message>
+    <message>
+        <location filename="../src/render/RenderPipeline.cpp" line="139"/>
+        <source>Could not create an offscreen rendering surface.</source>
+        <translation>Could not create an offscreen rendering surface.</translation>
+    </message>
+    <message>
+        <location filename="../src/render/RenderPipeline.cpp" line="143"/>
+        <source>Could not activate the OpenGL rendering context.</source>
+        <translation>Could not activate the OpenGL rendering context.</translation>
+    </message>
+    <message>
+        <location filename="../src/render/RenderPipeline.cpp" line="165"/>
+        <source>The composition scene failed to load.</source>
+        <translation>The composition scene failed to load.</translation>
+    </message>
+    <message>
+        <location filename="../src/render/RenderPipeline.cpp" line="178"/>
+        <source>The composition scene is missing its video slot.</source>
+        <translation>The composition scene is missing its video slot.</translation>
+    </message>
+    <message>
+        <location filename="../src/render/RenderPipeline.cpp" line="191"/>
+        <source>Offscreen GPU rendering could not be initialized on this system. Try again with the environment variable QT_QUICK_BACKEND=software.</source>
+        <translation>Offscreen GPU rendering could not be initialized on this system. Try again with the environment variable QT_QUICK_BACKEND=software.</translation>
+    </message>
+    <message>
+        <location filename="../src/render/RenderPipeline.cpp" line="219"/>
+        <source>ffmpeg was not found on your system — install ffmpeg.</source>
+        <translation>ffmpeg was not found on your system — install ffmpeg.</translation>
+    </message>
+    <message>
+        <location filename="../src/render/RenderPipeline.cpp" line="253"/>
+        <source>The encoder exited with code %1.</source>
+        <translation>The encoder exited with code %1.</translation>
+    </message>
+    <message>
+        <location filename="../src/render/RenderPipeline.cpp" line="260"/>
+        <source>Could not run the encoder: %1</source>
+        <translation>Could not run the encoder: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/render/RenderPipeline.cpp" line="266"/>
+        <source>Could not start the encoder: %1</source>
+        <translation>Could not start the encoder: %1</translation>
+    </message>
+</context>
+<context>
     <name>StudioApp</name>
     <message>
-        <location filename="../src/StudioApp.cpp" line="72"/>
+        <location filename="../src/StudioApp.cpp" line="73"/>
         <source>Import Video</source>
         <translation>Import Video</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="73"/>
+        <location filename="../src/StudioApp.cpp" line="74"/>
         <source>Videos (*.mp4 *.webm *.mkv *.mov)</source>
         <translation>Videos (*.mp4 *.webm *.mkv *.mov)</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="85"/>
+        <location filename="../src/StudioApp.cpp" line="86"/>
         <source>File not found: %1</source>
         <translation>File not found: %1</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="107"/>
-        <location filename="../src/StudioApp.cpp" line="134"/>
+        <location filename="../src/StudioApp.cpp" line="108"/>
+        <location filename="../src/StudioApp.cpp" line="135"/>
         <source>Could not open the editor window.</source>
         <translation>Could not open the editor window.</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="127"/>
+        <location filename="../src/StudioApp.cpp" line="128"/>
         <source>Could not open project</source>
         <translation>Could not open project</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="160"/>
+        <location filename="../src/StudioApp.cpp" line="161"/>
         <source>Save Project As</source>
         <translation>Save Project As</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="161"/>
+        <location filename="../src/StudioApp.cpp" line="162"/>
         <source>Unisic Studio Project (*.%1)</source>
         <translation>Unisic Studio Project (*.%1)</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="174"/>
+        <location filename="../src/StudioApp.cpp" line="175"/>
         <source>Untitled</source>
         <translation>Untitled</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="200"/>
+        <location filename="../src/StudioApp.cpp" line="201"/>
         <source>Project saved</source>
         <translation>Project saved</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="210"/>
+        <location filename="../src/StudioApp.cpp" line="211"/>
         <source>Choose wallpaper image</source>
         <translation>Choose wallpaper image</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="211"/>
+        <location filename="../src/StudioApp.cpp" line="212"/>
         <source>Images (*.png *.jpg *.jpeg *.webp *.bmp)</source>
         <translation>Images (*.png *.jpg *.jpeg *.webp *.bmp)</translation>
+    </message>
+    <message>
+        <location filename="../src/StudioApp.cpp" line="227"/>
+        <source>Export video</source>
+        <translation>Export video</translation>
+    </message>
+    <message>
+        <location filename="../src/StudioApp.cpp" line="228"/>
+        <source>%1 video (*.%2)</source>
+        <translation>%1 video (*.%2)</translation>
     </message>
 </context>
 <context>

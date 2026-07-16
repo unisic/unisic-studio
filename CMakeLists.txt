@@ -10,7 +10,7 @@ include(GNUInstallDirs)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Widgets Quick Qml QuickControls2 DBus Concurrent)
+find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Widgets Quick Qml QuickControls2 DBus Concurrent OpenGL)
 
 qt_standard_project_setup(REQUIRES 6.5)
 qt_policy(SET QTP0001 NEW)
@@ -45,6 +45,13 @@ qt_add_executable(unisic-studio
     src/project/ZoomTimeline.h src/project/ZoomTimeline.cpp
     src/project/StyleModel.h src/project/StyleModel.cpp
     src/project/StudioProject.h src/project/StudioProject.cpp
+    # Offscreen render + export pipeline (M1 final step). VideoFrameItem and
+    # ExportController are QML_ELEMENT types in the UnisicStudio module; the rest
+    # is plain C++ the controller wires up. ffmpeg is shelled out, never linked.
+    src/render/VideoFrameItem.h src/render/VideoFrameItem.cpp
+    src/render/FrameDecoder.h src/render/FrameDecoder.cpp
+    src/render/RenderPipeline.h src/render/RenderPipeline.cpp
+    src/render/ExportController.h src/render/ExportController.cpp
 )
 
 # qt_standard_project_setup bakes an $ORIGIN install-RPATH into the binary;
@@ -90,15 +97,20 @@ qt_add_qml_module(unisic-studio
         qml/StudioMain.qml
         qml/EditorWindow.qml
         qml/InspectorPanel.qml
+        qml/ExportDialog.qml
         qml/composition/CompositionRoot.qml
         qml/composition/PreviewVideo.qml
 )
 
 # qmltyperegistration includes QML_ELEMENT headers by basename.
-target_include_directories(unisic-studio PRIVATE src src/project src/media)
+target_include_directories(unisic-studio PRIVATE src src/project src/media src/render)
 target_link_libraries(unisic-studio PRIVATE
     Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Quick Qt6::Qml Qt6::QuickControls2
     Qt6::DBus Qt6::Concurrent
+    # Qt6::OpenGL: public QOpenGLFramebufferObject for the offscreen render target
+    # (QQuickRenderTarget::fromOpenGLTexture). A qtbase module, not a new external
+    # dependency; the RHI private texture-target headers are not shipped in the SDK.
+    Qt6::OpenGL
     # The kit exports its C++ static lib + its generated QML-module plugin.
     unisic-kit unisic-kitplugin
 )

@@ -6,6 +6,7 @@
 #include "project/StudioProject.h"
 
 #include <QCoreApplication>
+#include <QDesktopServices>
 #include <QDir>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -209,4 +210,36 @@ QString StudioApp::pickWallpaper(const QString &startDir)
     return QFileDialog::getOpenFileName(
         nullptr, tr("Choose wallpaper image"), start.isEmpty() ? QDir::homePath() : start,
         tr("Images (*.png *.jpg *.jpeg *.webp *.bmp)"));
+}
+
+QString StudioApp::pickExportOutput(const QString &format, const QString &startPath)
+{
+    const QString ext = format.isEmpty() ? QStringLiteral("mp4") : format;
+    QString start = startPath;
+    if (start.startsWith(QStringLiteral("file:")))
+        start = QUrl(start).toLocalFile();
+    if (start.isEmpty())
+        start = QStandardPaths::writableLocation(QStandardPaths::MoviesLocation);
+    if (start.isEmpty())
+        start = QDir::homePath();
+
+    QString selected = QFileDialog::getSaveFileName(
+        nullptr, tr("Export video"), start,
+        tr("%1 video (*.%2)").arg(ext.toUpper(), ext));
+    if (selected.isEmpty())
+        return QString(); // cancelled
+    // Enforce the format's suffix (the portal dialog may omit it).
+    if (!selected.endsWith(QLatin1Char('.') + ext, Qt::CaseInsensitive))
+        selected += QLatin1Char('.') + ext;
+    return selected;
+}
+
+void StudioApp::revealInFolder(const QString &path)
+{
+    QString local = path;
+    if (local.startsWith(QStringLiteral("file:")))
+        local = QUrl(local).toLocalFile();
+    const QString dir = QFileInfo(local).absolutePath();
+    if (!dir.isEmpty())
+        QDesktopServices::openUrl(QUrl::fromLocalFile(dir));
 }

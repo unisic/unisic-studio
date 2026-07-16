@@ -64,6 +64,15 @@ public:
     // Native image picker for the wallpaper-background field. Empty on cancel.
     Q_INVOKABLE QString pickWallpaper(const QString &startDir = QString());
 
+    // Native "save as" dialog for the export destination. `format` is the file
+    // extension ("mp4"/"webm") used for the filter and default suffix. Returns a
+    // plain local path (empty on cancel).
+    Q_INVOKABLE QString pickExportOutput(const QString &format, const QString &startPath = QString());
+
+    // Open the containing folder of `path` in the file manager (xdg-open via
+    // QDesktopServices). Used by the export "Reveal in folder" action.
+    Q_INVOKABLE void revealInFolder(const QString &path);
+
 signals:
     void recentProjectsChanged();
     // A user-facing message the shell surfaces as a toast (error=true → styled
