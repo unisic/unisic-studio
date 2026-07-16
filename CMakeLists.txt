@@ -122,6 +122,47 @@ else()
     message(STATUS "Translations: disabled (needs Qt6 LinguistTools) — English source strings only")
 endif()
 
+# Project-model unit tests (offscreen-capable, QCoreApplication only). Each test
+# compiles just the production .cpp files it exercises — mirrors Unisic's
+# per-test executable pattern. Core+Gui+Test (Gui for QColor/QRectF/QSize); no
+# QML, no event loop beyond QCoreApplication's.
+include(CTest)
+if(BUILD_TESTING)
+    find_package(Qt6 6.5 REQUIRED COMPONENTS Test)
+
+    qt_add_executable(studio_cursor_track_test
+        tests/CursorTrackTest.cpp
+        src/project/CursorTrack.h src/project/CursorTrack.cpp)
+    target_link_libraries(studio_cursor_track_test PRIVATE Qt6::Core Qt6::Gui Qt6::Test)
+    target_include_directories(studio_cursor_track_test PRIVATE src/project)
+    add_test(NAME studio_cursor_track_test COMMAND studio_cursor_track_test)
+
+    qt_add_executable(studio_click_track_test
+        tests/ClickTrackTest.cpp
+        src/project/ClickTrack.h src/project/ClickTrack.cpp)
+    target_link_libraries(studio_click_track_test PRIVATE Qt6::Core Qt6::Gui Qt6::Test)
+    target_include_directories(studio_click_track_test PRIVATE src/project)
+    add_test(NAME studio_click_track_test COMMAND studio_click_track_test)
+
+    qt_add_executable(studio_zoom_timeline_test
+        tests/ZoomTimelineTest.cpp
+        src/project/ZoomTimeline.h src/project/ZoomTimeline.cpp)
+    target_link_libraries(studio_zoom_timeline_test PRIVATE Qt6::Core Qt6::Gui Qt6::Test)
+    target_include_directories(studio_zoom_timeline_test PRIVATE src/project)
+    add_test(NAME studio_zoom_timeline_test COMMAND studio_zoom_timeline_test)
+
+    qt_add_executable(studio_project_test
+        tests/StudioProjectTest.cpp
+        src/project/CursorTrack.h src/project/CursorTrack.cpp
+        src/project/ClickTrack.h src/project/ClickTrack.cpp
+        src/project/ZoomTimeline.h src/project/ZoomTimeline.cpp
+        src/project/StyleModel.h src/project/StyleModel.cpp
+        src/project/StudioProject.h src/project/StudioProject.cpp)
+    target_link_libraries(studio_project_test PRIVATE Qt6::Core Qt6::Gui Qt6::Test)
+    target_include_directories(studio_project_test PRIVATE src/project)
+    add_test(NAME studio_project_test COMMAND studio_project_test)
+endif()
+
 install(TARGETS unisic-studio RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(FILES resources/app.unisic.UnisicStudio.desktop
     DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)

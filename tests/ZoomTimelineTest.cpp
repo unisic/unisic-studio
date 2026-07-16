@@ -1,0 +1,98 @@
+#include "ZoomTimeline.h"
+
+#include <QSignalSpy>
+#include <QTest>
+
+class ZoomTimelineTest : public QObject
+{
+    Q_OBJECT
+
+private slots:
+    void addKeyframeInsertsSorted();
+    void moveKeyframeReSorts();
+    void clearAutoSparesLockedAndManual();
+    void jsonRoundtrip();
+};
+
+static ZoomTimeline::Keyframe kf(qint64 t, ZoomTimeline::Source src = ZoomTimeline::Manual,
+                                 bool locked = false)
+{
+    ZoomTimeline::Keyframe k;
+    k.tMs = t;
+    k.rect = QRectF(0.1, 0.1, 0.5, 0.5);
+    k.source = src;
+    k.locked = locked;
+    return k;
+}
+
+void ZoomTimelineTest::addKeyframeInsertsSorted()
+{
+    ZoomTimeline z;
+    QCOMPARE(z.addKeyframe(kf(300)), 0);
+    QCOMPARE(z.addKeyframe(kf(100)), 0);   // lands before 300
+    QCOMPARE(z.addKeyframe(kf(200)), 1);   // between them
+    QCOMPARE(z.rowCount(), 3);
+    QCOMPARE(z.keyframes().at(0).tMs, qint64(100));
+    QCOMPARE(z.keyframes().at(1).tMs, qint64(200));
+    QCOMPARE(z.keyframes().at(2).tMs, qint64(300));
+}
+
+void ZoomTimelineTest::moveKeyframeReSorts()
+{
+    ZoomTimeline z;
+    z.addKeyframe(kf(100));
+    z.addKeyframe(kf(200));
+    z.addKeyframe(kf(300));
+
+    // Drag the first keyframe past the last: it must re-sort to the end.
+    const int newRow = z.moveKeyframe(0, 350);
+    QCOMPARE(newRow, 2);
+    QCOMPARE(z.keyframes().at(0).tMs, qint64(200));
+    QCOMPARE(z.keyframes().at(1).tMs, qint64(300));
+    QCOMPARE(z.keyframes().at(2).tMs, qint64(350));
+
+    QCOMPARE(z.moveKeyframe(99, 0), -1);   // out of range
+}
+
+void ZoomTimelineTest::clearAutoSparesLockedAndManual()
+{
+    ZoomTimeline z;
+    z.addKeyframe(kf(100, ZoomTimeline::Auto, false));    // dropped
+    z.addKeyframe(kf(200, ZoomTimeline::Auto, true));     // spared: locked
+    z.addKeyframe(kf(300, ZoomTimeline::Manual, false));  // spared: manual
+    z.addKeyframe(kf(400, ZoomTimeline::Auto, false));    // dropped
+
+    z.clearAuto();
+    QCOMPARE(z.rowCount(), 2);
+    QCOMPARE(z.keyframes().at(0).tMs, qint64(200));
+    QCOMPARE(z.keyframes().at(1).tMs, qint64(300));
+}
+
+void ZoomTimelineTest::jsonRoundtrip()
+{
+    ZoomTimeline z;
+    ZoomTimeline::Keyframe a = kf(100, ZoomTimeline::Auto, true);
+    a.rect = QRectF(0.2, 0.25, 0.5, 0.4);
+    a.easeInMs = 250;
+    a.easeOutMs = 400;
+    z.addKeyframe(a);
+    z.addKeyframe(kf(500, ZoomTimeline::Manual, false));
+    z.setAutoParams(QJsonObject{{QStringLiteral("strength"), 1.5},
+                                {QStringLiteral("dwellMs"), 800}});
+
+    ZoomTimeline r;
+    r.fromJson(z.toJson());
+    QCOMPARE(r.rowCount(), 2);
+    const ZoomTimeline::Keyframe &b = r.keyframes().at(0);
+    QCOMPARE(b.tMs, qint64(100));
+    QCOMPARE(b.rect, QRectF(0.2, 0.25, 0.5, 0.4));
+    QCOMPARE(b.easeInMs, 250);
+    QCOMPARE(b.easeOutMs, 400);
+    QCOMPARE(b.source, ZoomTimeline::Auto);
+    QCOMPARE(b.locked, true);
+    QCOMPARE(r.keyframes().at(1).source, ZoomTimeline::Manual);
+    QCOMPARE(r.autoParams().value(QStringLiteral("dwellMs")).toInt(), 800);
+}
+
+QTEST_GUILESS_MAIN(ZoomTimelineTest)
+#include "ZoomTimelineTest.moc"
