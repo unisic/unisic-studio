@@ -29,6 +29,14 @@ qt_add_executable(unisic-studio
     src/main.cpp
     src/StudioApp.h src/StudioApp.cpp
     src/StudioSettings.h src/StudioSettings.cpp
+    # Project document model (Core+Gui only, no QML — see src/project/*.h). The
+    # facade will expose these to QML as QObject* properties; they are not
+    # QML_ELEMENT types.
+    src/project/CursorTrack.h src/project/CursorTrack.cpp
+    src/project/ClickTrack.h src/project/ClickTrack.cpp
+    src/project/ZoomTimeline.h src/project/ZoomTimeline.cpp
+    src/project/StyleModel.h src/project/StyleModel.cpp
+    src/project/StudioProject.h src/project/StudioProject.cpp
 )
 
 # qt_standard_project_setup bakes an $ORIGIN install-RPATH into the binary;
@@ -69,7 +77,7 @@ qt_add_qml_module(unisic-studio
 )
 
 # qmltyperegistration includes QML_ELEMENT headers by basename.
-target_include_directories(unisic-studio PRIVATE src)
+target_include_directories(unisic-studio PRIVATE src src/project)
 target_link_libraries(unisic-studio PRIVATE
     Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Quick Qt6::Qml Qt6::QuickControls2
     Qt6::DBus Qt6::Concurrent
