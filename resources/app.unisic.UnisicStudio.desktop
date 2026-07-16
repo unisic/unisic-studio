@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Unisic Studio
+GenericName=Screen Recording Studio
+Comment=Turn screen recordings into polished videos with auto zoom, pan and styling
+Exec=unisic-studio
+Icon=app.unisic.UnisicStudio
+Terminal=false
+Categories=AudioVideo;Video;AudioVideoEditing;
+Keywords=screen recording;screencast;video editor;zoom;pan;cursor;export;ffmpeg;Wayland;
+StartupNotify=false

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>app.unisic.UnisicStudio</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+  <name>Unisic Studio</name>
+  <developer id="app.unisic">
+    <name>Unisic maintainers</name>
+  </developer>
+  <summary>Post-production for screen recordings</summary>
+  <description>
+    <p>
+      Unisic Studio is a post-production tool for screen recordings on Linux
+      Wayland. It turns a raw capture into a polished video: automatic zoom and
+      pan driven by cursor and click tracks, styling, and export via ffmpeg.
+      It is a sibling of Unisic and shares its foundation library.
+    </p>
+  </description>
+  <launchable type="desktop-id">app.unisic.UnisicStudio.desktop</launchable>
+  <categories>
+    <category>AudioVideo</category>
+    <category>Video</category>
+  </categories>
+  <branding>
+    <color type="primary" scheme_preference="light">#C8ACD6</color>
+    <color type="primary" scheme_preference="dark">#17153B</color>
+  </branding>
+  <provides>
+    <binary>unisic-studio</binary>
+  </provides>
+  <releases>
+    <release version="0.1.0" date="2026-07-16" />
+  </releases>
+  <content_rating type="oars-1.1" />
+</component>
