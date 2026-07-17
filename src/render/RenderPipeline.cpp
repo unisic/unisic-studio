@@ -10,6 +10,7 @@
 
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QOffscreenSurface>
 #include <QOpenGLContext>
 #include <QOpenGLFramebufferObject>
@@ -299,6 +300,10 @@ void RenderPipeline::startEncoder()
         // exit path (finish/fail/cancel/dtor).
         m_gifIntermediate = m_s.outputPath + QStringLiteral(".tmp.mkv");
         m_gifPalette = m_s.outputPath + QStringLiteral(".palette.png");
+        // The final gif is rendered to a sibling temp, then moved onto the
+        // destination in one step — so the real path never holds a half-written
+        // file, and a failed pass leaves no bogus output masquerading as success.
+        m_gifFinalTemp = m_s.outputPath + QStringLiteral(".partial.gif");
         args << QStringLiteral("-an") << QStringLiteral("-c:v") << QStringLiteral("ffv1")
              << QStringLiteral("-pix_fmt") << QStringLiteral("bgr0") << m_gifIntermediate;
     } else {
@@ -470,7 +475,7 @@ void RenderPipeline::startGifPaletteuse()
     args << QStringLiteral("-y") << QStringLiteral("-nostats") << QStringLiteral("-loglevel")
          << QStringLiteral("error") << QStringLiteral("-i") << m_gifIntermediate
          << QStringLiteral("-i") << m_gifPalette << QStringLiteral("-lavfi") << lavfi
-         << m_s.outputPath;
+         << m_gifFinalTemp;
 
     m_converter = new QProcess;
     connect(m_converter, &QProcess::finished, this, [this](int code, QProcess::ExitStatus) {
@@ -479,12 +484,23 @@ void RenderPipeline::startGifPaletteuse()
         QProcess *conv = m_converter;
         m_converter = nullptr;
         conv->deleteLater();
-        if (code == 0)
-            finish(); // deletes the intermediate + palette via deleteGifTemps()
-        else {
+        if (code != 0) {
             QString msg = QString::fromLocal8Bit(conv->readAllStandardError()).trimmed();
             fail(msg.isEmpty() ? tr("GIF rendering failed (code %1).").arg(code) : msg);
+            return;
         }
+        // paletteuse can exit 0 having written nothing (bad filter, full disk) —
+        // check the temp before moving so a silent no-output can't reach finish().
+        if (!QFileInfo::exists(m_gifFinalTemp) || QFileInfo(m_gifFinalTemp).size() <= 0) {
+            fail(tr("The GIF converter produced no output."));
+            return;
+        }
+        if (!moveIntoPlace(m_gifFinalTemp, m_s.outputPath)) {
+            fail(tr("The GIF was rendered but could not be saved to %1.")
+                     .arg(QDir::toNativeSeparators(m_s.outputPath)));
+            return;
+        }
+        finish(); // deletes the intermediate + palette via deleteGifTemps()
     });
     connect(m_converter, &QProcess::errorOccurred, this, [this](QProcess::ProcessError) {
         if (!m_active || m_canceled || !m_converter)
@@ -500,12 +516,40 @@ void RenderPipeline::deleteGifTemps()
         QFile::remove(m_gifIntermediate);
     if (!m_gifPalette.isEmpty() && QFile::exists(m_gifPalette))
         QFile::remove(m_gifPalette);
+    if (!m_gifFinalTemp.isEmpty() && QFile::exists(m_gifFinalTemp))
+        QFile::remove(m_gifFinalTemp);
+}
+
+bool RenderPipeline::moveIntoPlace(const QString &src, const QString &dst)
+{
+    if (src == dst)
+        return QFile::exists(dst);
+    QFile::remove(dst);
+    if (QFile::rename(src, dst)) // same directory → atomic; the common path
+        return true;
+    // Cross-device rename fails with EXDEV (e.g. a temp on tmpfs vs. a FAT
+    // destination) — fall back to copy + remove, same as StudioRecorder::moveFile.
+    if (QFile::copy(src, dst)) {
+        QFile::remove(src);
+        return true;
+    }
+    return false;
 }
 
 void RenderPipeline::finish()
 {
     if (!m_active)
         return;
+    // A finished export MUST leave a real, non-empty file at the destination.
+    // Guards the whole "silent success, no file on disk" class (a muxer that wrote
+    // nothing, a stage that exited 0 without producing output): surface it as a
+    // visible failure instead of a fake Done. m_active is still true here, so
+    // fail() runs.
+    if (m_s.outputPath.isEmpty() || !QFileInfo::exists(m_s.outputPath)
+            || QFileInfo(m_s.outputPath).size() <= 0) {
+        fail(tr("The export finished but produced no output file."));
+        return;
+    }
     m_active = false;
     emit progress(m_totalEstimate, m_totalEstimate, 0);
 

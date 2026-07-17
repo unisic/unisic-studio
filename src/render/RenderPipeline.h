@@ -117,6 +117,9 @@ private:
     void startGifPalettegen();         // pass 1: intermediate → palette PNG
     void startGifPaletteuse();         // pass 2: intermediate + palette → gif
     void deleteGifTemps();
+    // Move a finished temp file onto the destination: same-dir rename (atomic) with
+    // a cross-device copy+remove fallback (e.g. temp fs != a FAT destination).
+    static bool moveIntoPlace(const QString &src, const QString &dst);
     void finish();                     // clean success finalize
     void fail(const QString &message);
     void teardownScene();
@@ -148,6 +151,7 @@ private:
     QProcess *m_converter = nullptr;    // gif palette pass (reaped via FfmpegUtil::stopProcess)
     QString m_gifIntermediate;          // lossless .mkv the encoder writes for gif
     QString m_gifPalette;               // palette .png from pass 1
+    QString m_gifFinalTemp;             // paletteuse writes here, then moved to output
     QString m_posterTemp;               // one-shot poster PNG for the desktopBlur bg
     QByteArray m_rowBuf;                // reused row-pack scratch (padded-stride path only)
 };

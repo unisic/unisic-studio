@@ -6,6 +6,28 @@
 
 #include <QFileInfo>
 
+namespace {
+
+// Return `path` with its suffix forced to `ext` (case-insensitive; keeps the
+// directory + base name). Empty input passes through. Used to keep the chosen
+// destination's suffix in lockstep with the selected format.
+QString withExtension(const QString &path, const QString &ext)
+{
+    if (path.isEmpty())
+        return path;
+    const QFileInfo fi(path);
+    if (fi.suffix().compare(ext, Qt::CaseInsensitive) == 0)
+        return path;
+    QString base = fi.completeBaseName();
+    if (base.isEmpty())
+        base = fi.fileName(); // dot-file with no base (".gif") — keep as-is
+    const QString name = base + QLatin1Char('.') + ext;
+    const QString dir = fi.path();
+    return dir.isEmpty() ? name : dir + QLatin1Char('/') + name;
+}
+
+} // namespace
+
 ExportController::ExportController(QObject *parent)
     : QObject(parent)
 {
@@ -28,6 +50,18 @@ void ExportController::setFormat(const QString &v)
         return;
     m_format = v;
     emit formatChanged();
+    // Keep the destination's suffix in lockstep with the format. Without this a
+    // path seeded while the format was the default "mp4" keeps its ".mp4" suffix
+    // after the user switches to GIF, and the GIF pass then muxes palette frames
+    // into an MP4/H.264 container — a silent wrong-format "success" that leaves no
+    // .gif on disk (the batch-2 GIF-export bug). extension() reads the new format.
+    if (!m_outputPath.isEmpty()) {
+        const QString fixed = withExtension(m_outputPath, extension());
+        if (fixed != m_outputPath) {
+            m_outputPath = fixed;
+            emit outputPathChanged();
+        }
+    }
 }
 
 void ExportController::setResolution(const QString &v)
@@ -126,6 +160,16 @@ void ExportController::start(StudioProject *project)
         m_error = tr("Choose a destination file.");
         setState(Error);
         return;
+    }
+    // Defensive catch-all for any code path that set the format after the path
+    // (see setFormat): the destination MUST carry the current format's suffix so
+    // ffmpeg picks the right muxer and a real .gif/.mp4/.webm lands on disk.
+    {
+        const QString fixed = withExtension(m_outputPath, extension());
+        if (fixed != m_outputPath) {
+            m_outputPath = fixed;
+            emit outputPathChanged();
+        }
     }
 
     // --- Resolve dimensions from the resolution preset + the styled aspect so
