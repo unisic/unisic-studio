@@ -193,6 +193,34 @@ if(BUILD_TESTING)
     add_test(NAME studio_project_test COMMAND studio_project_test)
 endif()
 
+# ---------------------------------------------------------------------------
+# Auto-keyframe engine (M3, src/engine/) — pure logic, Core+Gui only, no QML.
+# Appended as its own block to keep the merge surface small. The engine sources
+# are compiled and verified through the two offscreen unit tests below; the
+# facade (StudioApp) will add them to the app target when it wires generate()/
+# evaluate() into the project model.
+# ---------------------------------------------------------------------------
+if(BUILD_TESTING)
+    qt_add_executable(studio_cursor_smoother_test
+        tests/CursorSmootherTest.cpp
+        src/engine/CursorSmoother.h src/engine/CursorSmoother.cpp
+        src/project/CursorTrack.h src/project/CursorTrack.cpp)
+    target_link_libraries(studio_cursor_smoother_test PRIVATE Qt6::Core Qt6::Gui Qt6::Test)
+    target_include_directories(studio_cursor_smoother_test PRIVATE src/engine src/project)
+    add_test(NAME studio_cursor_smoother_test COMMAND studio_cursor_smoother_test)
+
+    qt_add_executable(studio_keyframe_engine_test
+        tests/KeyframeEngineTest.cpp
+        src/engine/CursorSmoother.h src/engine/CursorSmoother.cpp
+        src/engine/KeyframeEngine.h src/engine/KeyframeEngine.cpp
+        src/project/CursorTrack.h src/project/CursorTrack.cpp
+        src/project/ClickTrack.h src/project/ClickTrack.cpp
+        src/project/ZoomTimeline.h src/project/ZoomTimeline.cpp)
+    target_link_libraries(studio_keyframe_engine_test PRIVATE Qt6::Core Qt6::Gui Qt6::Test)
+    target_include_directories(studio_keyframe_engine_test PRIVATE src/engine src/project)
+    add_test(NAME studio_keyframe_engine_test COMMAND studio_keyframe_engine_test)
+endif()
+
 install(TARGETS unisic-studio RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(FILES resources/app.unisic.UnisicStudio.desktop
     DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
