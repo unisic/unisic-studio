@@ -1,0 +1,9 @@
+- Idntytfikator nagrywania nie jest przy odliczaniu jak layer-shell czy na gnome xwayland. nie jest nad wszystkim, oraz jest widoczny na nagraniu.
+- widać, działa, ale nie podstawia witrtualnej ładniejszej oraz powiekszonej myszki która jest bardziej inteligentna jeżeli chodzi ruch niżeli ludzkie ruchy myszą.
+- auto zoomy są mało dokładne, oraz nie da się ich ręcznie edytować.
+- UX edytora jest słabe, nie można np. nagrania odtworzyć przy pomocji spacji. Aspect ratio działa tylko na edytowany plik, a nie na to w jaki sposób jest wyświetlana akcja ekranu (ekran na nagraniu zawsze jest w 16:9).
+- Pauza działa dobrze
+- to samo co w 4, jeżeli coś tak działą średnio to jest gorzej.
+- To dobrze działa, ale by się przydało więcej pre-setów
+- export przynajmniej na gif nie działa dobrze (w ogóle nie mam gif'a na dysku z eksportu), oraz UX tego okna dialogowego exportu jest dziwne i nieintuicyjne
+-
