@@ -21,15 +21,35 @@
     <category>AudioVideo</category>
     <category>Video</category>
   </categories>
+  <url type="homepage">https://github.com/unisic</url>
+  <url type="bugtracker">https://github.com/unisic/unisic-studio/issues</url>
+  <url type="vcs-browser">https://github.com/unisic/unisic-studio</url>
   <branding>
     <color type="primary" scheme_preference="light">#C8ACD6</color>
     <color type="primary" scheme_preference="dark">#17153B</color>
   </branding>
   <provides>
     <binary>unisic-studio</binary>
+    <mediatype>application/x-unisic-studio-project</mediatype>
   </provides>
+  <!-- Placeholder screenshots: replace the raw URLs once real captures land in
+       docs/screenshots/ (see README TODO). -->
+  <screenshots>
+    <screenshot type="default">
+      <caption>The editor with auto zoom, styling and the timeline</caption>
+      <image>https://raw.githubusercontent.com/unisic/unisic-studio/main/docs/screenshots/editor.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Export to MP4, WebM or GIF</caption>
+      <image>https://raw.githubusercontent.com/unisic/unisic-studio/main/docs/screenshots/export.png</image>
+    </screenshot>
+  </screenshots>
   <releases>
-    <release version="0.1.0" date="2026-07-16" />
+    <release version="0.1.0" date="2026-07-16">
+      <description>
+        <p>First preview: import, auto zoom/pan, styling, and MP4/WebM/GIF export.</p>
+      </description>
+    </release>
   </releases>
   <content_rating type="oars-1.1" />
 </component>

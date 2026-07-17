@@ -23,6 +23,7 @@
 #include <QSocketNotifier>
 #include <QTimer>
 #include <QDir>
+#include <QFileInfo>
 #include <QScopedPointer>
 #include <csignal>
 #include <sys/socket.h>
@@ -72,15 +73,19 @@ static QString singleInstanceServerName()
 #endif
 }
 
-// Second launch: hand the running instance a bare "raise" and exit. Returns
-// true when a peer accepted the message.
-static bool notifyExistingInstance(const QString &serverName)
+// Second launch: hand the running instance either a bare "raise" or, when a
+// project file was passed on the command line (double-click), "open <path>" so
+// the single live instance opens it. Returns true when a peer accepted.
+static bool notifyExistingInstance(const QString &serverName, const QString &openPath)
 {
     QLocalSocket socket;
     socket.connectToServer(serverName, QIODevice::WriteOnly);
     if (!socket.waitForConnected(200))
         return false;
-    socket.write("raise\n");
+    const QByteArray msg = openPath.isEmpty()
+                               ? QByteArray("raise\n")
+                               : ("open " + openPath.toUtf8() + "\n");
+    socket.write(msg);
     socket.flush();
     socket.waitForBytesWritten(500);
     socket.disconnectFromServer();
@@ -113,18 +118,33 @@ int main(int argc, char *argv[])
 
     installSignalHandlers(&app);
 
-    // Single instance: a second launch forwards a bare "raise" and exits, so
-    // only one process ever writes the config file. Only the genuinely
+    // A .unisicstudio project passed positionally (file-manager double-click via
+    // the desktop file's `%f`, or `unisic-studio foo.unisicstudio`) opens in the
+    // editor. Filtered by suffix so the hidden --import/--export-test flag values
+    // (video paths) are never mistaken for a project to open.
+    QString fileToOpen;
+    for (const QString &a : app.arguments().mid(1)) {
+        if (a.startsWith(QLatin1Char('-')))
+            continue;
+        if (a.endsWith(QLatin1String(".unisicstudio"), Qt::CaseInsensitive)
+            && QFileInfo::exists(a)) {
+            fileToOpen = QFileInfo(a).absoluteFilePath();
+            break;
+        }
+    }
+
+    // Single instance: a second launch forwards "raise" (or "open <path>") and
+    // exits, so only one process ever writes the config file. Only the genuinely
     // environmental no-peer case falls through to a fresh instance.
     const QString serverName = singleInstanceServerName();
-    if (notifyExistingInstance(serverName))
+    if (notifyExistingInstance(serverName, fileToOpen))
         return 0;
     QLocalServer::removeServer(serverName); // clear a stale socket left by a crash
     auto *server = new QLocalServer(&app);
     if (!server->listen(serverName)) {
         // A live peer may have taken the name between our probe and listen() —
         // hand off rather than boot a duplicate config writer.
-        if (notifyExistingInstance(serverName))
+        if (notifyExistingInstance(serverName, fileToOpen))
             return 0;
         qWarning() << "Could not create single-instance server:" << server->errorString();
     }
@@ -192,9 +212,19 @@ int main(int argc, char *argv[])
     QPointer<QQuickWindow> mainWin =
         qobject_cast<QQuickWindow *>(engine.rootObjects().value(0));
     if (server->isListening()) {
-        QObject::connect(server, &QLocalServer::newConnection, &app, [server, mainWin] {
+        QObject::connect(server, &QLocalServer::newConnection, &app, [server, mainWin, &studio] {
             while (QLocalSocket *socket = server->nextPendingConnection()) {
                 QObject::connect(socket, &QLocalSocket::disconnected, socket, &QObject::deleteLater);
+                // The message is tiny and flushed immediately by the sender.
+                QByteArray buf;
+                if (socket->waitForReadyRead(300))
+                    buf = socket->readAll();
+                const QString text = QString::fromUtf8(buf).trimmed();
+                if (text.startsWith(QLatin1String("open "))) {
+                    const QString path = text.mid(5).trimmed();
+                    if (!path.isEmpty())
+                        studio.openProject(path); // opens its own editor window
+                }
                 if (mainWin) {
                     mainWin->show();
                     mainWin->raise();
@@ -203,6 +233,11 @@ int main(int argc, char *argv[])
             }
         });
     }
+
+    // This IS the single live instance: open a positionally-passed project once
+    // the engine and main window are fully up.
+    if (!fileToOpen.isEmpty())
+        QTimer::singleShot(0, &studio, [&studio, fileToOpen] { studio.openProject(fileToOpen); });
 
     // Hidden dev aid: `--import <file>` drives the import path programmatically
     // (headless verification of probe → project → editor, no file dialog).

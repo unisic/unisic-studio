@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <!--
+    The Unisic Studio project sidecar (StudioProject::projectExtension() ==
+    "unisicstudio"). Matched by glob only: the on-disk format is compact JSON
+    (v1) with a reserved gzip-magic container escape hatch, so there is no
+    stable byte signature at a fixed offset to write a reliable <magic> for —
+    the extension is the honest discriminator.
+
+    Install this to $PREFIX/share/mime/packages/ and run
+    `update-mime-database $PREFIX/share/mime` so file managers resolve
+    *.unisicstudio to this type and offer Unisic Studio (its .desktop declares
+    the matching MimeType=).
+  -->
+  <mime-type type="application/x-unisic-studio-project">
+    <comment>Unisic Studio project</comment>
+    <icon name="app.unisic.UnisicStudio"/>
+    <glob pattern="*.unisicstudio"/>
+  </mime-type>
+</mime-info>

@@ -308,3 +308,9 @@ install(FILES resources/app.unisic.UnisicStudio.metainfo.xml
 install(FILES resources/icons/unisic-studio.svg
     DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps
     RENAME app.unisic.UnisicStudio.svg)
+# MIME type for the .unisicstudio project sidecar. Packages must run
+# `update-mime-database` (and update-desktop-database) in their post-install
+# so file managers resolve *.unisicstudio and offer this app — the DEB/RPM
+# CPack scripts and the PKGBUILD/.spec handle that (see packaging/).
+install(FILES packaging/mime/app.unisic.UnisicStudio.xml
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/mime/packages)
