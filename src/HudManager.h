@@ -42,6 +42,13 @@ public slots:
 
 private:
     void closeHud();
+    // Make `win` a wlr-layer-shell OVERLAY surface anchored bottom-centre of the
+    // recorded screen (must run BEFORE the window is first shown). No-op when built
+    // without layer-shell OR the compositor doesn't expose it (GNOME) — the HUD is
+    // then a plain toplevel, which native Wayland cannot position/keep-on-top.
+    void configureLayerShell(QQuickWindow *win);
+    // Runtime probe (cached): does the current compositor expose zwlr_layer_shell_v1?
+    static bool compositorSupportsLayerShell();
 
     QQmlEngine *m_engine = nullptr;
     StudioApp *m_app;

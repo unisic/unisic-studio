@@ -40,6 +40,7 @@ class StudioSettings : public QObject
     Q_PROPERTY(int recordMaxDurationSec READ recordMaxDurationSec WRITE setRecordMaxDurationSec NOTIFY recordMaxDurationSecChanged)
     Q_PROPERTY(bool clickCaptureEnabled READ clickCaptureEnabled WRITE setClickCaptureEnabled NOTIFY clickCaptureEnabledChanged)
     Q_PROPERTY(bool hideWindowWhileRecording READ hideWindowWhileRecording WRITE setHideWindowWhileRecording NOTIFY hideWindowWhileRecordingChanged)
+    Q_PROPERTY(bool hudCollapseWhileRecording READ hudCollapseWhileRecording WRITE setHudCollapseWhileRecording NOTIFY hudCollapseWhileRecordingChanged)
     // Optional webcam capture (default OFF): records a v4l2 device into a sidecar
     // alongside the screen, composited as an overlay in the editor.
     Q_PROPERTY(bool recordWebcam READ recordWebcam WRITE setRecordWebcam NOTIFY recordWebcamChanged)
@@ -90,6 +91,10 @@ public:
     // Hide the main window while a recording is live (like a screen recorder), so
     // the shell doesn't land in the capture. It returns on stop/cancel/fail.
     U_SETTING(bool, hideWindowWhileRecording, setHideWindowWhileRecording, "hideWindowWhileRecording", true)
+    // Collapse the recording HUD to a minimal bottom-edge sliver after commit
+    // (expands on hover / while paused). Screencast can't exclude the HUD from the
+    // capture, so this is the honest burn-in mitigation. Default ON.
+    U_SETTING(bool, hudCollapseWhileRecording, setHudCollapseWhileRecording, "hudCollapseWhileRecording", true)
     // Webcam: default OFF (opt-in, privacy). Device is a v4l2 path.
     U_SETTING(bool, recordWebcam, setRecordWebcam, "recordWebcam", false)
     U_SETTING(QString, webcamDevice, setWebcamDevice, "webcamDevice", QStringLiteral("/dev/video0"))
@@ -106,6 +111,7 @@ signals:
     void recordMaxDurationSecChanged();
     void clickCaptureEnabledChanged();
     void hideWindowWhileRecordingChanged();
+    void hudCollapseWhileRecordingChanged();
     void recordWebcamChanged();
     void webcamDeviceChanged();
 

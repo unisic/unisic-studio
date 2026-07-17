@@ -326,6 +326,14 @@ Item {
                                 onToggled: (c) => Studio.settings.hideWindowWhileRecording = c
                             }
                         }
+                        SettingRow {
+                            label: qsTr("Collapse recording HUD")
+                            help: qsTr("Shrink the HUD to a thin bottom-edge sliver while recording so it barely shows in the capture. Hover it (or pause) to expand.")
+                            USwitch {
+                                checked: Studio.settings.hudCollapseWhileRecording
+                                onToggled: (c) => Studio.settings.hudCollapseWhileRecording = c
+                            }
+                        }
                     }
                 }
 

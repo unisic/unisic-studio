@@ -32,7 +32,14 @@ find_package(PkgConfig)
 if(PkgConfig_FOUND)
     pkg_check_modules(LIBINPUT IMPORTED_TARGET libinput)
     pkg_check_modules(LIBUDEV IMPORTED_TARGET libudev)
+    pkg_check_modules(WAYLAND_CLIENT IMPORTED_TARGET wayland-client)
 endif()
+# Optional: make the recording HUD a wlr-layer-shell OVERLAY surface (KWin/wlroots)
+# so it sits above every window and anchors to the recorded screen. Needs both
+# LayerShellQt (the layer surface) and wayland-client (the runtime probe for
+# zwlr_layer_shell_v1 — GNOME/Mutter don't expose it; there we fall back to a plain
+# toplevel). Guarded exactly like the kit's HAVE_PIPEWIRE; the build succeeds without.
+find_package(LayerShellQt QUIET)
 
 qt_add_executable(unisic-studio
     src/main.cpp
@@ -158,6 +165,15 @@ if(LIBINPUT_FOUND AND LIBUDEV_FOUND)
     message(STATUS "unisic-studio: click capture enabled (HAVE_LIBINPUT=ON)")
 else()
     message(WARNING "libinput/libudev not found — click capture (ClickCapture) will be unavailable")
+endif()
+
+# Optional layer-shell HUD (see the find_package above).
+if(LayerShellQt_FOUND AND WAYLAND_CLIENT_FOUND)
+    target_link_libraries(unisic-studio PRIVATE LayerShellQt::Interface PkgConfig::WAYLAND_CLIENT)
+    target_compile_definitions(unisic-studio PRIVATE HAVE_LAYERSHELL)
+    message(STATUS "unisic-studio: layer-shell HUD enabled (HAVE_LAYERSHELL=ON)")
+else()
+    message(STATUS "unisic-studio: layer-shell HUD disabled (needs layer-shell-qt-devel + wayland-client) — plain toplevel HUD")
 endif()
 target_link_libraries(unisic-studio PRIVATE
     Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Quick Qt6::Qml Qt6::QuickControls2
