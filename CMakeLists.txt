@@ -314,3 +314,53 @@ install(FILES resources/icons/unisic-studio.svg
 # CPack scripts and the PKGBUILD/.spec handle that (see packaging/).
 install(FILES packaging/mime/app.unisic.UnisicStudio.xml
     DESTINATION ${CMAKE_INSTALL_DATADIR}/mime/packages)
+
+# ---------------------------------------------------------------------------
+# Packaging (CPack). The generator is chosen on the command line
+# (`cpack -G DEB`), not pinned here, so a plain build never triggers it.
+# Mirrors Unisic's layout: generic CPACK_* + a DEB block; Arch/Fedora ship as
+# packaging/arch/PKGBUILD and packaging/unisic-studio.spec.
+# ---------------------------------------------------------------------------
+set(CPACK_PACKAGE_NAME "unisic-studio")
+set(CPACK_PACKAGE_VENDOR "Unisic")
+set(CPACK_PACKAGE_CONTACT "Unisic maintainers")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY
+    "Post-production for screen recordings on Linux Wayland")
+set(CPACK_PACKAGE_HOMEPAGE_URL "https://github.com/unisic")
+set(CPACK_PACKAGE_VERSION "${STUDIO_VERSION_STRING}")
+set(CPACK_PACKAGE_FILE_NAME
+    "${CPACK_PACKAGE_NAME}-${STUDIO_VERSION_STRING}-${CMAKE_SYSTEM_PROCESSOR}")
+set(CPACK_STRIP_FILES TRUE)
+
+# --- Debian/Ubuntu ---
+set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Unisic maintainers")
+set(CPACK_DEBIAN_PACKAGE_SECTION "video")
+# shlibdeps resolves the linked Qt/ffmpeg .so deps automatically; the list below
+# adds the RUNTIME-only QML plugins (imported by qml, not linked) that shlibdeps
+# can't see. QtMultimedia is a HARD dependency: the editor's live video preview
+# and the webcam overlay both `import QtMultimedia`, and libqt6multimedia6 pulls
+# the ffmpeg media backend the plugin needs. (The C++ still degrades to a poster
+# frame if the module is somehow missing, but a package must ship it.)
+set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
+set(STUDIO_DEBIAN_RUNTIME_DEPENDS
+    ffmpeg
+    libqt6svg6
+    pipewire
+    qml6-module-qtquick
+    qml6-module-qtquick-controls
+    qml6-module-qtquick-templates
+    qml6-module-qtquick-effects
+    qml6-module-qtquick-window
+    qml6-module-qtmultimedia
+    libqt6multimedia6
+    qt6-wayland
+    xdg-desktop-portal)
+string(JOIN ", " CPACK_DEBIAN_PACKAGE_DEPENDS ${STUDIO_DEBIAN_RUNTIME_DEPENDS})
+set(CPACK_DEBIAN_PACKAGE_RECOMMENDS
+    "xdg-desktop-portal-kde | xdg-desktop-portal-gnome | xdg-desktop-portal-wlr | xdg-desktop-portal-gtk")
+# postinst/postrm refresh the MIME + desktop caches so *.unisicstudio resolves.
+set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA
+    "${CMAKE_CURRENT_SOURCE_DIR}/packaging/deb/postinst;${CMAKE_CURRENT_SOURCE_DIR}/packaging/deb/postrm")
+set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
+
+include(CPack)

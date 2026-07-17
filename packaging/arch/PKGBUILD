@@ -1,0 +1,36 @@
+pkgname=unisic-studio
+# Plain literal: the CI release job seds in the CMakeLists version, matching the
+# Unisic sibling's PKGBUILD.
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='Post-production for screen recordings on Linux Wayland: auto zoom/pan, styling, export'
+arch=('x86_64')
+url='https://github.com/unisic'
+license=('GPL-3.0-or-later')
+# qt6-multimedia is a hard dep: the editor preview and the webcam overlay both
+# import QtMultimedia (with its ffmpeg backend). libinput/systemd (udev) enable
+# the optional click-capture path; without them the build still succeeds but
+# click capture is inert.
+depends=('qt6-base' 'qt6-declarative' 'qt6-svg' 'qt6-multimedia' 'qt6-wayland'
+         'pipewire' 'ffmpeg' 'libinput' 'systemd-libs' 'xdg-desktop-portal')
+makedepends=('cmake' 'ninja' 'git' 'qt6-tools' 'pkgconf')
+optdepends=('xdg-desktop-portal-kde: KDE portal backend for screen recording'
+            'xdg-desktop-portal-gnome: GNOME portal backend'
+            'xdg-desktop-portal-wlr: wlroots portal backend')
+source=("${pkgname}-${pkgver}.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+    # A packaged build must be a release build (a real build number flips
+    # UNISIC_DEV_BUILD off — a separate app identity/config is dev-only).
+    export STUDIO_BUILD_NUMBER="${STUDIO_BUILD_NUMBER:-${pkgver}-${pkgrel}}"
+    cmake -S "${srcdir}/${pkgname}-${pkgver}" -B build -G Ninja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr \
+        -DUNISIC_DEV_BUILD=OFF
+    cmake --build build
+}
+
+package() {
+    DESTDIR="${pkgdir}" cmake --install build --strip
+}

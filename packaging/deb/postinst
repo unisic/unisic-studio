@@ -1,0 +1,13 @@
+#!/bin/sh
+set -e
+# Refresh the shared caches so file managers resolve *.unisicstudio to the
+# newly-installed MIME type and offer Unisic Studio as its handler.
+if [ "$1" = "configure" ]; then
+    if command -v update-mime-database >/dev/null 2>&1; then
+        update-mime-database /usr/share/mime >/dev/null 2>&1 || true
+    fi
+    if command -v update-desktop-database >/dev/null 2>&1; then
+        update-desktop-database -q /usr/share/applications >/dev/null 2>&1 || true
+    fi
+fi
+exit 0
