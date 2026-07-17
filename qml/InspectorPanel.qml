@@ -6,6 +6,11 @@ import Unisic.Kit
 // CompositionRoot preview immediately and mark the project dirty. Colors come
 // from Theme tokens; controls are kit components — nothing styled is invented
 // here. Every label is qsTr()'d.
+//
+// Layout: a scrollable stack of always-visible, collapsible section cards
+// (Background / Layout / Cursor / Shadow / Frame / Webcam), each with an icon +
+// chevron header. When a zoom keyframe is selected its card is pushed ON TOP of
+// the stack (not replacing the style cards) so the style panel is never lost.
 Rectangle {
     id: panel
     color: Theme.background
@@ -41,6 +46,7 @@ Rectangle {
     readonly property var _bgTypes: ["color", "gradient", "wallpaper", "desktopBlur"]
     readonly property var _frames: ["none", "minimal", "titlebar"]
     readonly property var _webcamPositions: ["bottomRight", "bottomLeft", "topRight", "topLeft"]
+    readonly property var _cursorStyles: ["pointer", "system", "dot", "circle"]
 
     // Whether the loaded project actually recorded a webcam sidecar.
     readonly property bool hasWebcam: (typeof editorProject !== "undefined" && editorProject)
@@ -56,8 +62,19 @@ Rectangle {
         { a: "#134E5E", b: "#71B280" },  // Forest
         { a: "#4A00E0", b: "#8E2DE2" },  // Grape
         { a: "#DE6262", b: "#FFB88C" },  // Peach
-        { a: "#232526", b: "#414345" }   // Slate
+        { a: "#232526", b: "#414345" },  // Slate
+        { a: "#F12711", b: "#F5AF19" },  // Ember
+        { a: "#00C9FF", b: "#92FE9D" },  // Aurora
+        { a: "#C31432", b: "#240B36" },  // Berry
+        { a: "#485563", b: "#29323C" },  // Steel
+        { a: "#654EA3", b: "#EAAFC8" },  // Lavender
+        { a: "#141E30", b: "#243B55" },  // Coal (dark neutral)
+        { a: "#3E5151", b: "#DECBA4" },  // Sandstone
+        { a: "#8E9EAB", b: "#EEF2F3" }   // Ash (light neutral)
     ]
+
+    // Flat single-colour presets (sets backgroundColor).
+    readonly property var _flatPresets: ["#1E1E24", "#17153B", "#2E236C", "#ECECF2"]
 
     // ---- Reusable rows ------------------------------------------------------
     component LabeledSlider: Column {
@@ -132,6 +149,103 @@ Rectangle {
         UColorPopup { id: pop; showAlpha: parent.showAlpha; onPicked: (c) => parent.picked(c) }
     }
 
+    // Always-visible, clickable section header with an icon + a collapse chevron.
+    // Owns its own `expanded` state (default open); the body binds visibility to it.
+    component SectionHeader: Item {
+        id: hdr
+        property string title: ""
+        property string iconName: ""
+        property bool expanded: true
+        width: parent ? parent.width : 0
+        height: 24
+        Row {
+            anchors.left: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: Theme.spacingS
+            UIcon {
+                visible: hdr.iconName !== ""
+                anchors.verticalCenter: parent.verticalCenter
+                name: hdr.iconName
+                size: 15
+                color: Theme.textSecondary
+            }
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: hdr.title
+                color: Theme.textPrimary
+                font.pixelSize: Theme.fontM
+                font.weight: Font.DemiBold
+            }
+        }
+        UIcon {
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            name: hdr.expanded ? "arrow-down" : "arrow-right"
+            size: 13
+            color: Theme.textTertiary
+        }
+        MouseArea {
+            anchors.fill: parent
+            cursorShape: Qt.PointingHandCursor
+            onClicked: hdr.expanded = !hdr.expanded
+        }
+    }
+
+    // A cursor-style preview swatch (tiny motif + label); highlighted when active.
+    component CursorTile: Column {
+        id: tile
+        property string sid: ""
+        property string label: ""
+        property bool active: false
+        signal picked()
+        width: 58
+        spacing: 3
+        Rectangle {
+            width: parent.width
+            height: 40
+            radius: Theme.radiusS
+            color: tile.active ? Theme.surfaceHi : Theme.surface
+            border.width: tile.active ? 2 : 1
+            border.color: tile.active ? Theme.accent : Theme.divider
+            // Pointer: a diagonal arrow. System: the recorded mouse glyph.
+            UIcon {
+                anchors.centerIn: parent
+                visible: tile.sid === "pointer" || tile.sid === "system"
+                name: tile.sid === "pointer" ? "arrow-up" : "input-mouse"
+                rotation: tile.sid === "pointer" ? -45 : 0
+                size: 20
+                color: Theme.textPrimary
+            }
+            // Dot: a filled disc.
+            Rectangle {
+                anchors.centerIn: parent
+                visible: tile.sid === "dot"
+                width: 12; height: 12; radius: 6
+                color: Theme.textPrimary
+            }
+            // Circle: a ring.
+            Rectangle {
+                anchors.centerIn: parent
+                visible: tile.sid === "circle"
+                width: 18; height: 18; radius: 9
+                color: "transparent"
+                border.width: 2
+                border.color: Theme.textPrimary
+            }
+            MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                onClicked: tile.picked()
+            }
+        }
+        Text {
+            anchors.horizontalCenter: parent.horizontalCenter
+            text: tile.label
+            color: tile.active ? Theme.textPrimary : Theme.textSecondary
+            font.pixelSize: Theme.fontS
+        }
+    }
+
     // ---- Scrollable content -------------------------------------------------
     Flickable {
         id: flick
@@ -156,7 +270,7 @@ Rectangle {
                 font.weight: Font.Bold
             }
 
-            // ---- Selected zoom keyframe --------------------------------------
+            // ---- Selected zoom keyframe (pushed on top of the stack) ---------
             UCard {
                 width: parent.width
                 visible: panel.hasKf
@@ -306,344 +420,412 @@ Rectangle {
                 }
             }
 
-            // ---- Background ----
+            // ---- Background --------------------------------------------------
             UCard {
                 width: parent.width
                 Column {
                     width: parent.width
-                    spacing: Theme.spacingM
-                    Text {
-                        text: qsTr("Background")
-                        color: Theme.textPrimary
-                        font.pixelSize: Theme.fontM
-                        font.weight: Font.DemiBold
-                    }
-                    LabeledCombo {
-                        label: qsTr("Type")
-                        model: [qsTr("Color"), qsTr("Gradient"), qsTr("Wallpaper"), qsTr("Desktop blur")]
-                        currentIndex: sm ? Math.max(0, panel._bgTypes.indexOf(sm.backgroundType)) : 0
-                        onActivated: (i) => { if (sm) sm.backgroundType = panel._bgTypes[i] }
-                    }
-                    ColorRow {
-                        visible: sm && sm.backgroundType === "color"
-                        label: qsTr("Fill")
-                        color: sm ? sm.backgroundColor : "black"
-                        onPicked: (c) => { if (sm) sm.backgroundColor = c }
-                    }
-                    ColorRow {
-                        visible: sm && sm.backgroundType === "gradient"
-                        label: qsTr("Top")
-                        color: sm ? sm.gradientStart : "black"
-                        onPicked: (c) => { if (sm) sm.gradientStart = c }
-                    }
-                    ColorRow {
-                        visible: sm && sm.backgroundType === "gradient"
-                        label: qsTr("Bottom")
-                        color: sm ? sm.gradientEnd : "black"
-                        onPicked: (c) => { if (sm) sm.gradientEnd = c }
-                    }
-
-                    // Gradient presets — clickable swatches (pure QML gradients).
+                    spacing: bgHeader.expanded ? Theme.spacingM : 0
+                    SectionHeader { id: bgHeader; title: qsTr("Background"); iconName: "image" }
                     Column {
-                        visible: sm && sm.backgroundType === "gradient"
+                        visible: bgHeader.expanded
                         width: parent.width
-                        spacing: 4
-                        Text {
-                            text: qsTr("Presets")
-                            color: Theme.textSecondary
-                            font.pixelSize: Theme.fontS
+                        spacing: Theme.spacingM
+
+                        LabeledCombo {
+                            label: qsTr("Type")
+                            model: [qsTr("Color"), qsTr("Gradient"), qsTr("Wallpaper"), qsTr("Desktop blur")]
+                            currentIndex: sm ? Math.max(0, panel._bgTypes.indexOf(sm.backgroundType)) : 0
+                            onActivated: (i) => { if (sm) sm.backgroundType = panel._bgTypes[i] }
                         }
-                        Flow {
+                        ColorRow {
+                            visible: sm && sm.backgroundType === "color"
+                            label: qsTr("Fill")
+                            color: sm ? sm.backgroundColor : "black"
+                            onPicked: (c) => { if (sm) sm.backgroundColor = c }
+                        }
+
+                        // Flat-colour presets (clickable swatches).
+                        Column {
+                            visible: sm && sm.backgroundType === "color"
                             width: parent.width
-                            spacing: Theme.spacingS
-                            Repeater {
-                                model: panel._gradientPresets
-                                Rectangle {
-                                    width: 44
-                                    height: 30
-                                    radius: Theme.radiusS
-                                    border.width: 1
-                                    border.color: Theme.divider
-                                    gradient: Gradient {
-                                        GradientStop { position: 0.0; color: modelData.a }
-                                        GradientStop { position: 1.0; color: modelData.b }
+                            spacing: 4
+                            Text {
+                                text: qsTr("Presets")
+                                color: Theme.textSecondary
+                                font.pixelSize: Theme.fontS
+                            }
+                            Flow {
+                                width: parent.width
+                                spacing: Theme.spacingS
+                                Repeater {
+                                    model: panel._flatPresets
+                                    Rectangle {
+                                        required property var modelData
+                                        width: 44
+                                        height: 30
+                                        radius: Theme.radiusS
+                                        border.width: 1
+                                        border.color: Theme.divider
+                                        color: modelData
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: { if (sm) sm.backgroundColor = modelData }
+                                        }
                                     }
-                                    MouseArea {
-                                        anchors.fill: parent
-                                        cursorShape: Qt.PointingHandCursor
-                                        onClicked: {
-                                            if (sm) {
-                                                sm.gradientStart = modelData.a
-                                                sm.gradientEnd = modelData.b
+                                }
+                            }
+                        }
+
+                        ColorRow {
+                            visible: sm && sm.backgroundType === "gradient"
+                            label: qsTr("Top")
+                            color: sm ? sm.gradientStart : "black"
+                            onPicked: (c) => { if (sm) sm.gradientStart = c }
+                        }
+                        ColorRow {
+                            visible: sm && sm.backgroundType === "gradient"
+                            label: qsTr("Bottom")
+                            color: sm ? sm.gradientEnd : "black"
+                            onPicked: (c) => { if (sm) sm.gradientEnd = c }
+                        }
+
+                        // Gradient presets — clickable swatches (pure QML gradients).
+                        Column {
+                            visible: sm && sm.backgroundType === "gradient"
+                            width: parent.width
+                            spacing: 4
+                            Text {
+                                text: qsTr("Presets")
+                                color: Theme.textSecondary
+                                font.pixelSize: Theme.fontS
+                            }
+                            Flow {
+                                width: parent.width
+                                spacing: Theme.spacingS
+                                Repeater {
+                                    model: panel._gradientPresets
+                                    Rectangle {
+                                        required property var modelData
+                                        width: 44
+                                        height: 30
+                                        radius: Theme.radiusS
+                                        border.width: 1
+                                        border.color: Theme.divider
+                                        gradient: Gradient {
+                                            GradientStop { position: 0.0; color: modelData.a }
+                                            GradientStop { position: 1.0; color: modelData.b }
+                                        }
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: {
+                                                if (sm) {
+                                                    sm.gradientStart = modelData.a
+                                                    sm.gradientEnd = modelData.b
+                                                }
                                             }
                                         }
                                     }
                                 }
                             }
                         }
-                    }
 
-                    // desktopBlur is a blurred copy of the recording's first
-                    // frame; state the approximation honestly in the UI.
-                    Text {
-                        visible: sm && sm.backgroundType === "desktopBlur"
-                        width: parent.width
-                        text: qsTr("Uses a blurred copy of the video's first frame.")
-                        color: Theme.textTertiary
-                        font.pixelSize: Theme.fontS
-                        wrapMode: Text.WordWrap
-                    }
-                    Row {
-                        visible: sm && sm.backgroundType === "wallpaper"
-                        width: parent.width
-                        spacing: Theme.spacingS
-                        UTextField {
-                            id: wallField
-                            width: parent.width - browseBtn.width - parent.spacing
-                            placeholder: qsTr("No image selected")
-                            text: sm ? sm.wallpaperPath : ""
-                            onAccepted: { if (sm) sm.wallpaperPath = text }
+                        // desktopBlur is a blurred copy of the recording's first
+                        // frame; state the approximation honestly in the UI.
+                        Text {
+                            visible: sm && sm.backgroundType === "desktopBlur"
+                            width: parent.width
+                            text: qsTr("Uses a blurred copy of the video's first frame.")
+                            color: Theme.textTertiary
+                            font.pixelSize: Theme.fontS
+                            wrapMode: Text.WordWrap
                         }
-                        UButton {
-                            id: browseBtn
-                            text: qsTr("Browse…")
-                            variant: "tonal"
-                            onClicked: {
-                                const p = Studio.pickWallpaper(sm ? sm.wallpaperPath : "")
-                                if (p !== "" && sm) sm.wallpaperPath = p
+                        Row {
+                            visible: sm && sm.backgroundType === "wallpaper"
+                            width: parent.width
+                            spacing: Theme.spacingS
+                            UTextField {
+                                id: wallField
+                                width: parent.width - browseBtn.width - parent.spacing
+                                placeholder: qsTr("No image selected")
+                                text: sm ? sm.wallpaperPath : ""
+                                onAccepted: { if (sm) sm.wallpaperPath = text }
+                            }
+                            UButton {
+                                id: browseBtn
+                                text: qsTr("Browse…")
+                                variant: "tonal"
+                                onClicked: {
+                                    const p = Studio.pickWallpaper(sm ? sm.wallpaperPath : "")
+                                    if (p !== "" && sm) sm.wallpaperPath = p
+                                }
                             }
                         }
                     }
                 }
             }
 
-            // ---- Layout ----
+            // ---- Layout ------------------------------------------------------
             UCard {
                 width: parent.width
                 Column {
                     width: parent.width
-                    spacing: Theme.spacingM
-                    Text {
-                        text: qsTr("Layout")
-                        color: Theme.textPrimary
-                        font.pixelSize: Theme.fontM
-                        font.weight: Font.DemiBold
-                    }
-                    LabeledSlider {
-                        label: qsTr("Padding")
-                        from: 0; to: 30; suffix: "%"
-                        value: sm ? sm.paddingPct : 0
-                        onMoved: (v) => { if (sm) sm.paddingPct = v }
-                    }
-                    LabeledSlider {
-                        label: qsTr("Corner radius")
-                        from: 0; to: 40
-                        value: sm ? sm.cornerRadius : 0
-                        onMoved: (v) => { if (sm) sm.cornerRadius = Math.round(v) }
-                    }
-                    // Crop-to-fill vs letterbox. Changing it re-frames the auto camera
-                    // (manual/locked keyframes are kept), so regenerate on change.
-                    LabeledCombo {
-                        label: qsTr("Fill mode")
-                        model: [qsTr("Crop to fill"), qsTr("Fit (letterbox)")]
-                        currentIndex: (sm && sm.fillMode === "fit") ? 1 : 0
-                        onActivated: (i) => {
-                            if (!sm) return
-                            sm.fillMode = i === 1 ? "fit" : "fill"
-                            if (typeof editorProject !== "undefined" && editorProject)
-                                Studio.regenerateZoom(editorProject)
-                        }
-                    }
-                }
-            }
-
-            // ---- Cursor ----
-            UCard {
-                width: parent.width
-                Column {
-                    width: parent.width
-                    spacing: Theme.spacingM
-                    Text {
-                        text: qsTr("Cursor")
-                        color: Theme.textPrimary
-                        font.pixelSize: Theme.fontM
-                        font.weight: Font.DemiBold
-                    }
-                    LabeledCombo {
-                        label: qsTr("Style")
-                        model: [qsTr("Pointer"), qsTr("System"), qsTr("Dot"), qsTr("Circle")]
-                        readonly property var ids: ["pointer", "system", "dot", "circle"]
-                        currentIndex: sm ? Math.max(0, ids.indexOf(sm.cursorStyle)) : 0
-                        onActivated: (i) => { if (sm) sm.cursorStyle = ids[i] }
-                    }
-                    LabeledSlider {
-                        label: qsTr("Size")
-                        from: 0.5; to: 3.0; stepSize: 0.1; decimals: 1; suffix: "×"
-                        value: sm ? sm.cursorScale : 1.6
-                        onMoved: (v) => { if (sm) sm.cursorScale = v }
-                    }
-                    Row {
-                        width: parent.width
-                        Text {
-                            text: qsTr("Click ripple")
-                            color: Theme.textSecondary
-                            font.pixelSize: Theme.fontS
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: parent.width - rippleSwitch.width
-                            elide: Text.ElideRight
-                        }
-                        USwitch {
-                            id: rippleSwitch
-                            checked: sm ? sm.clickRipple : true
-                            onToggled: (c) => { if (sm) sm.clickRipple = c }
-                        }
-                    }
-                    ColorRow {
-                        visible: sm && sm.clickRipple
-                        label: qsTr("Ripple color")
-                        color: sm ? sm.rippleColor : "#C8ACD6"
-                        onPicked: (c) => { if (sm) sm.rippleColor = c }
-                    }
-                }
-            }
-
-            // ---- Shadow ----
-            UCard {
-                width: parent.width
-                Column {
-                    width: parent.width
-                    spacing: Theme.spacingM
-                    Text {
-                        text: qsTr("Shadow")
-                        color: Theme.textPrimary
-                        font.pixelSize: Theme.fontM
-                        font.weight: Font.DemiBold
-                    }
-                    LabeledSlider {
-                        label: qsTr("Blur")
-                        from: 0; to: 100
-                        value: sm ? sm.shadowBlur : 0
-                        onMoved: (v) => { if (sm) sm.shadowBlur = Math.round(v) }
-                    }
-                    LabeledSlider {
-                        label: qsTr("Opacity")
-                        from: 0; to: 1; stepSize: 0.05; decimals: 2
-                        value: sm ? sm.shadowOpacity : 0
-                        onMoved: (v) => { if (sm) sm.shadowOpacity = v }
-                    }
-                    LabeledSlider {
-                        label: qsTr("Offset Y")
-                        from: 0; to: 40
-                        value: sm ? sm.shadowOffsetY : 0
-                        onMoved: (v) => { if (sm) sm.shadowOffsetY = Math.round(v) }
-                    }
-                }
-            }
-
-            // ---- Frame ----
-            UCard {
-                width: parent.width
-                Column {
-                    width: parent.width
-                    spacing: Theme.spacingM
-                    Text {
-                        text: qsTr("Frame")
-                        color: Theme.textPrimary
-                        font.pixelSize: Theme.fontM
-                        font.weight: Font.DemiBold
-                    }
-                    LabeledCombo {
-                        label: qsTr("Style")
-                        model: [qsTr("None"), qsTr("Minimal"), qsTr("Title bar")]
-                        currentIndex: sm ? Math.max(0, panel._frames.indexOf(sm.frameStyle)) : 0
-                        onActivated: (i) => { if (sm) sm.frameStyle = panel._frames[i] }
-                    }
+                    spacing: layoutHeader.expanded ? Theme.spacingM : 0
+                    SectionHeader { id: layoutHeader; title: qsTr("Layout"); iconName: "transform-crop" }
                     Column {
-                        visible: sm && sm.frameStyle === "titlebar"
+                        visible: layoutHeader.expanded
                         width: parent.width
-                        spacing: 4
-                        Text {
-                            text: qsTr("Title")
-                            color: Theme.textSecondary
-                            font.pixelSize: Theme.fontS
+                        spacing: Theme.spacingM
+                        LabeledSlider {
+                            label: qsTr("Padding")
+                            from: 0; to: 30; suffix: "%"
+                            value: sm ? sm.paddingPct : 0
+                            onMoved: (v) => { if (sm) sm.paddingPct = v }
                         }
-                        UTextField {
-                            width: parent.width
-                            placeholder: qsTr("Window title")
-                            text: sm ? sm.frameTitle : ""
-                            onEdited: (t) => { if (sm) sm.frameTitle = t }
+                        LabeledSlider {
+                            label: qsTr("Corner radius")
+                            from: 0; to: 40
+                            value: sm ? sm.cornerRadius : 0
+                            onMoved: (v) => { if (sm) sm.cornerRadius = Math.round(v) }
+                        }
+                        // Crop-to-fill vs letterbox. Changing it re-frames the auto camera
+                        // (manual/locked keyframes are kept), so regenerate on change.
+                        LabeledCombo {
+                            label: qsTr("Fill mode")
+                            model: [qsTr("Crop to fill"), qsTr("Fit (letterbox)")]
+                            currentIndex: (sm && sm.fillMode === "fit") ? 1 : 0
+                            onActivated: (i) => {
+                                if (!sm) return
+                                sm.fillMode = i === 1 ? "fit" : "fill"
+                                if (typeof editorProject !== "undefined" && editorProject)
+                                    Studio.regenerateZoom(editorProject)
+                            }
                         }
                     }
                 }
             }
 
-            // ---- Webcam ----
+            // ---- Cursor ------------------------------------------------------
             UCard {
                 width: parent.width
                 Column {
                     width: parent.width
-                    spacing: Theme.spacingM
-                    Text {
-                        text: qsTr("Webcam")
-                        color: Theme.textPrimary
-                        font.pixelSize: Theme.fontM
-                        font.weight: Font.DemiBold
-                    }
-                    // No sidecar recorded → explain how to get one.
-                    Text {
-                        visible: !panel.hasWebcam
+                    spacing: cursorHeader.expanded ? Theme.spacingM : 0
+                    SectionHeader { id: cursorHeader; title: qsTr("Cursor"); iconName: "input-mouse" }
+                    Column {
+                        visible: cursorHeader.expanded
                         width: parent.width
-                        wrapMode: Text.WordWrap
-                        text: qsTr("This project has no webcam recording. Enable “Record webcam” in Settings before recording.")
-                        color: Theme.textTertiary
-                        font.pixelSize: Theme.fontS
-                    }
-                    Row {
-                        visible: panel.hasWebcam
-                        width: parent.width
+                        spacing: Theme.spacingM
+
+                        // Style — segmented preview tiles.
+                        Column {
+                            width: parent.width
+                            spacing: 4
+                            Text { text: qsTr("Style"); color: Theme.textSecondary; font.pixelSize: Theme.fontS }
+                            Row {
+                                width: parent.width
+                                spacing: Theme.spacingS
+                                CursorTile {
+                                    sid: "pointer"; label: qsTr("Pointer")
+                                    active: sm && sm.cursorStyle === "pointer"
+                                    onPicked: { if (sm) sm.cursorStyle = "pointer" }
+                                }
+                                CursorTile {
+                                    sid: "system"; label: qsTr("System")
+                                    active: sm && sm.cursorStyle === "system"
+                                    onPicked: { if (sm) sm.cursorStyle = "system" }
+                                }
+                                CursorTile {
+                                    sid: "dot"; label: qsTr("Dot")
+                                    active: sm && sm.cursorStyle === "dot"
+                                    onPicked: { if (sm) sm.cursorStyle = "dot" }
+                                }
+                                CursorTile {
+                                    sid: "circle"; label: qsTr("Circle")
+                                    active: sm && sm.cursorStyle === "circle"
+                                    onPicked: { if (sm) sm.cursorStyle = "circle" }
+                                }
+                            }
+                        }
+
+                        LabeledSlider {
+                            label: qsTr("Size")
+                            from: 1.0; to: 3.0; stepSize: 0.1; decimals: 1; suffix: "×"
+                            value: sm ? sm.cursorScale : 1.6
+                            onMoved: (v) => { if (sm) sm.cursorScale = v }
+                        }
+                        Row {
+                            width: parent.width
+                            Text {
+                                text: qsTr("Click ripple")
+                                color: Theme.textSecondary
+                                font.pixelSize: Theme.fontS
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: parent.width - rippleSwitch.width
+                                elide: Text.ElideRight
+                            }
+                            USwitch {
+                                id: rippleSwitch
+                                checked: sm ? sm.clickRipple : true
+                                onToggled: (c) => { if (sm) sm.clickRipple = c }
+                            }
+                        }
+                        ColorRow {
+                            visible: sm && sm.clickRipple
+                            label: qsTr("Ripple color")
+                            color: sm ? sm.rippleColor : "#C8ACD6"
+                            onPicked: (c) => { if (sm) sm.rippleColor = c }
+                        }
                         Text {
-                            text: qsTr("Show webcam")
-                            color: Theme.textSecondary
+                            width: parent.width
+                            text: qsTr("Clicks briefly shrink the cursor for press feedback.")
+                            color: Theme.textTertiary
                             font.pixelSize: Theme.fontS
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: parent.width - wcSwitch.width
-                            elide: Text.ElideRight
-                        }
-                        USwitch {
-                            id: wcSwitch
-                            checked: sm ? sm.webcamEnabled : false
-                            onToggled: (c) => { if (sm) sm.webcamEnabled = c }
+                            wrapMode: Text.WordWrap
                         }
                     }
-                    LabeledCombo {
-                        visible: panel.hasWebcam && sm && sm.webcamEnabled
-                        label: qsTr("Position")
-                        model: [qsTr("Bottom right"), qsTr("Bottom left"), qsTr("Top right"), qsTr("Top left")]
-                        currentIndex: sm ? Math.max(0, panel._webcamPositions.indexOf(sm.webcamPosition)) : 0
-                        onActivated: (i) => { if (sm) sm.webcamPosition = panel._webcamPositions[i] }
-                    }
-                    LabeledSlider {
-                        visible: panel.hasWebcam && sm && sm.webcamEnabled
-                        label: qsTr("Size")
-                        from: 8; to: 40; suffix: "%"
-                        value: sm ? sm.webcamSizePct : 20
-                        onMoved: (v) => { if (sm) sm.webcamSizePct = v }
-                    }
-                    Row {
-                        visible: panel.hasWebcam && sm && sm.webcamEnabled
+                }
+            }
+
+            // ---- Shadow ------------------------------------------------------
+            UCard {
+                width: parent.width
+                Column {
+                    width: parent.width
+                    spacing: shadowHeader.expanded ? Theme.spacingM : 0
+                    SectionHeader { id: shadowHeader; title: qsTr("Shadow"); iconName: "edit-image" }
+                    Column {
+                        visible: shadowHeader.expanded
                         width: parent.width
-                        Text {
-                            text: qsTr("Circle")
-                            color: Theme.textSecondary
-                            font.pixelSize: Theme.fontS
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: parent.width - roundSwitch.width
-                            elide: Text.ElideRight
+                        spacing: Theme.spacingM
+                        LabeledSlider {
+                            label: qsTr("Blur")
+                            from: 0; to: 100
+                            value: sm ? sm.shadowBlur : 0
+                            onMoved: (v) => { if (sm) sm.shadowBlur = Math.round(v) }
                         }
-                        USwitch {
-                            id: roundSwitch
-                            checked: sm ? sm.webcamRounded : true
-                            onToggled: (c) => { if (sm) sm.webcamRounded = c }
+                        LabeledSlider {
+                            label: qsTr("Opacity")
+                            from: 0; to: 1; stepSize: 0.05; decimals: 2
+                            value: sm ? sm.shadowOpacity : 0
+                            onMoved: (v) => { if (sm) sm.shadowOpacity = v }
+                        }
+                        LabeledSlider {
+                            label: qsTr("Offset Y")
+                            from: 0; to: 40
+                            value: sm ? sm.shadowOffsetY : 0
+                            onMoved: (v) => { if (sm) sm.shadowOffsetY = Math.round(v) }
+                        }
+                    }
+                }
+            }
+
+            // ---- Frame -------------------------------------------------------
+            UCard {
+                width: parent.width
+                Column {
+                    width: parent.width
+                    spacing: frameHeader.expanded ? Theme.spacingM : 0
+                    SectionHeader { id: frameHeader; title: qsTr("Frame"); iconName: "window" }
+                    Column {
+                        visible: frameHeader.expanded
+                        width: parent.width
+                        spacing: Theme.spacingM
+                        LabeledCombo {
+                            label: qsTr("Style")
+                            model: [qsTr("None"), qsTr("Minimal"), qsTr("Title bar")]
+                            currentIndex: sm ? Math.max(0, panel._frames.indexOf(sm.frameStyle)) : 0
+                            onActivated: (i) => { if (sm) sm.frameStyle = panel._frames[i] }
+                        }
+                        Column {
+                            visible: sm && sm.frameStyle === "titlebar"
+                            width: parent.width
+                            spacing: 4
+                            Text {
+                                text: qsTr("Title")
+                                color: Theme.textSecondary
+                                font.pixelSize: Theme.fontS
+                            }
+                            UTextField {
+                                width: parent.width
+                                placeholder: qsTr("Window title")
+                                text: sm ? sm.frameTitle : ""
+                                onEdited: (t) => { if (sm) sm.frameTitle = t }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ---- Webcam ------------------------------------------------------
+            UCard {
+                width: parent.width
+                Column {
+                    width: parent.width
+                    spacing: webcamHeader.expanded ? Theme.spacingM : 0
+                    SectionHeader { id: webcamHeader; title: qsTr("Webcam"); iconName: "camera-web" }
+                    Column {
+                        visible: webcamHeader.expanded
+                        width: parent.width
+                        spacing: Theme.spacingM
+                        // No sidecar recorded → explain how to get one.
+                        Text {
+                            visible: !panel.hasWebcam
+                            width: parent.width
+                            wrapMode: Text.WordWrap
+                            text: qsTr("This project has no webcam recording. Enable “Record webcam” in Settings before recording.")
+                            color: Theme.textTertiary
+                            font.pixelSize: Theme.fontS
+                        }
+                        Row {
+                            visible: panel.hasWebcam
+                            width: parent.width
+                            Text {
+                                text: qsTr("Show webcam")
+                                color: Theme.textSecondary
+                                font.pixelSize: Theme.fontS
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: parent.width - wcSwitch.width
+                                elide: Text.ElideRight
+                            }
+                            USwitch {
+                                id: wcSwitch
+                                checked: sm ? sm.webcamEnabled : false
+                                onToggled: (c) => { if (sm) sm.webcamEnabled = c }
+                            }
+                        }
+                        LabeledCombo {
+                            visible: panel.hasWebcam && sm && sm.webcamEnabled
+                            label: qsTr("Position")
+                            model: [qsTr("Bottom right"), qsTr("Bottom left"), qsTr("Top right"), qsTr("Top left")]
+                            currentIndex: sm ? Math.max(0, panel._webcamPositions.indexOf(sm.webcamPosition)) : 0
+                            onActivated: (i) => { if (sm) sm.webcamPosition = panel._webcamPositions[i] }
+                        }
+                        LabeledSlider {
+                            visible: panel.hasWebcam && sm && sm.webcamEnabled
+                            label: qsTr("Size")
+                            from: 8; to: 40; suffix: "%"
+                            value: sm ? sm.webcamSizePct : 20
+                            onMoved: (v) => { if (sm) sm.webcamSizePct = v }
+                        }
+                        Row {
+                            visible: panel.hasWebcam && sm && sm.webcamEnabled
+                            width: parent.width
+                            Text {
+                                text: qsTr("Circle")
+                                color: Theme.textSecondary
+                                font.pixelSize: Theme.fontS
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: parent.width - roundSwitch.width
+                                elide: Text.ElideRight
+                            }
+                            USwitch {
+                                id: roundSwitch
+                                checked: sm ? sm.webcamRounded : true
+                                onToggled: (c) => { if (sm) sm.webcamRounded = c }
+                            }
                         }
                     }
                 }
