@@ -38,8 +38,21 @@ Rectangle {
     TapHandler { onTapped: panel.deselect() }
 
     // Index maps between the model's string enums and the combo rows.
-    readonly property var _bgTypes: ["color", "gradient", "wallpaper"]
+    readonly property var _bgTypes: ["color", "gradient", "wallpaper", "desktopBlur"]
     readonly property var _frames: ["none", "minimal", "titlebar"]
+
+    // Curated gradient presets (pure colour pairs — NO binary assets). First is
+    // the kit Primary→Tertiary default. Clicking a swatch sets both stops.
+    readonly property var _gradientPresets: [
+        { a: "#17153B", b: "#433D8B" },  // Kit (Primary → Tertiary)
+        { a: "#0F2027", b: "#2C5364" },  // Midnight
+        { a: "#FF512F", b: "#DD2476" },  // Sunset
+        { a: "#2193B0", b: "#6DD5ED" },  // Ocean
+        { a: "#134E5E", b: "#71B280" },  // Forest
+        { a: "#4A00E0", b: "#8E2DE2" },  // Grape
+        { a: "#DE6262", b: "#FFB88C" },  // Peach
+        { a: "#232526", b: "#414345" }   // Slate
+    ]
 
     // ---- Reusable rows ------------------------------------------------------
     component LabeledSlider: Column {
@@ -302,7 +315,7 @@ Rectangle {
                     }
                     LabeledCombo {
                         label: qsTr("Type")
-                        model: [qsTr("Color"), qsTr("Gradient"), qsTr("Wallpaper")]
+                        model: [qsTr("Color"), qsTr("Gradient"), qsTr("Wallpaper"), qsTr("Desktop blur")]
                         currentIndex: sm ? Math.max(0, panel._bgTypes.indexOf(sm.backgroundType)) : 0
                         onActivated: (i) => { if (sm) sm.backgroundType = panel._bgTypes[i] }
                     }
@@ -323,6 +336,57 @@ Rectangle {
                         label: qsTr("Bottom")
                         color: sm ? sm.gradientEnd : "black"
                         onPicked: (c) => { if (sm) sm.gradientEnd = c }
+                    }
+
+                    // Gradient presets — clickable swatches (pure QML gradients).
+                    Column {
+                        visible: sm && sm.backgroundType === "gradient"
+                        width: parent.width
+                        spacing: 4
+                        Text {
+                            text: qsTr("Presets")
+                            color: Theme.textSecondary
+                            font.pixelSize: Theme.fontS
+                        }
+                        Flow {
+                            width: parent.width
+                            spacing: Theme.spacingS
+                            Repeater {
+                                model: panel._gradientPresets
+                                Rectangle {
+                                    width: 44
+                                    height: 30
+                                    radius: Theme.radiusS
+                                    border.width: 1
+                                    border.color: Theme.divider
+                                    gradient: Gradient {
+                                        GradientStop { position: 0.0; color: modelData.a }
+                                        GradientStop { position: 1.0; color: modelData.b }
+                                    }
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: {
+                                            if (sm) {
+                                                sm.gradientStart = modelData.a
+                                                sm.gradientEnd = modelData.b
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // desktopBlur is a blurred copy of the recording's first
+                    // frame; state the approximation honestly in the UI.
+                    Text {
+                        visible: sm && sm.backgroundType === "desktopBlur"
+                        width: parent.width
+                        text: qsTr("Uses a blurred copy of the video's first frame.")
+                        color: Theme.textTertiary
+                        font.pixelSize: Theme.fontS
+                        wrapMode: Text.WordWrap
                     }
                     Row {
                         visible: sm && sm.backgroundType === "wallpaper"

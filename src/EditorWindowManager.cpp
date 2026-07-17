@@ -64,14 +64,18 @@ bool EditorWindowManager::openEditor(StudioProject *project, bool posterNeeded)
             closeWindow(win);
     });
 
-    // No-QtMultimedia fallback: extract a still so the canvas isn't empty. The
-    // extractor is parented to the project (cascade-deleted); it writes into its
-    // own QTemporaryDir, swept on teardown. A freshly imported project has no
-    // resolved path yet, so fall back to the absolute path (same rule as QML).
+    // Extract a still of the first frame. It serves TWO consumers: the
+    // no-QtMultimedia canvas fallback (so the slot isn't empty) AND the
+    // "desktopBlur" background, which needs it even when live playback works —
+    // so we always extract when a video + ffmpeg are present, regardless of
+    // posterNeeded. The extractor is parented to the project (cascade-deleted);
+    // it writes into its own QTemporaryDir, swept on teardown. A freshly
+    // imported project has no resolved path yet, so fall back to the absolute
+    // path (same rule as QML).
+    Q_UNUSED(posterNeeded)
     const QString video = project->videoResolved().isEmpty() ? project->videoAbsPath()
                                                              : project->videoResolved();
-    if (posterNeeded && !video.isEmpty() && QFileInfo::exists(video)
-        && PosterExtractor::available()) {
+    if (!video.isEmpty() && QFileInfo::exists(video) && PosterExtractor::available()) {
         auto *poster = new PosterExtractor(project);
         connect(poster, &PosterExtractor::extracted, win, [win](const QString &png) {
             win->setProperty("posterSource", QUrl::fromLocalFile(png).toString());

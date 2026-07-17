@@ -148,5 +148,6 @@ private:
     QProcess *m_converter = nullptr;    // gif palette pass (reaped via FfmpegUtil::stopProcess)
     QString m_gifIntermediate;          // lossless .mkv the encoder writes for gif
     QString m_gifPalette;               // palette .png from pass 1
+    QString m_posterTemp;               // one-shot poster PNG for the desktopBlur bg
     QByteArray m_rowBuf;                // reused row-pack scratch (padded-stride path only)
 };

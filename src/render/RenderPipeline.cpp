@@ -8,6 +8,7 @@
 #include "media/FfmpegUtil.h"
 #include "project/StyleModel.h"
 
+#include <QDir>
 #include <QFile>
 #include <QOffscreenSurface>
 #include <QOpenGLContext>
@@ -191,6 +192,29 @@ bool RenderPipeline::buildScene(QString *error)
     m_root->setProperty("styleModel", QVariant::fromValue(static_cast<QObject *>(m_s.style)));
     m_root->setProperty("videoSize", QVariant::fromValue(QSizeF(m_s.videoSize)));
     m_root->setProperty("timeMs", double(m_s.trimInMs));
+
+    // The "desktopBlur" background needs a poster of the first frame. Extract it
+    // ONCE here (synchronously — a single ffmpeg frame, ~100 ms) and hand the
+    // shared composition the file:// URL; the blur is then computed once on a
+    // cached layer, never per frame. Only pay the cost when it's actually the
+    // selected background. Deleted in teardownScene() on every exit path.
+    if (m_s.style && m_s.style->backgroundType() == QLatin1String("desktopBlur")) {
+        const QString exe = FrameDecoder::ffmpegPath();
+        if (!exe.isEmpty()) {
+            m_posterTemp = QDir(QDir::tempPath())
+                               .filePath(QStringLiteral("unisic-studio-poster-%1.png").arg(m_s.projectId));
+            const QString ss = QString::number(qMax<qint64>(0, m_s.trimInMs) / 1000.0, 'f', 3);
+            QProcess poster;
+            poster.start(exe, {QStringLiteral("-y"), QStringLiteral("-loglevel"),
+                               QStringLiteral("error"), QStringLiteral("-ss"), ss,
+                               QStringLiteral("-i"), m_s.master, QStringLiteral("-frames:v"),
+                               QStringLiteral("1"), m_posterTemp});
+            if (poster.waitForFinished(5000) && QFile::exists(m_posterTemp))
+                m_root->setProperty("posterSource", QUrl::fromLocalFile(m_posterTemp).toString());
+            else
+                m_posterTemp.clear(); // extraction failed → composition falls back to fill colour
+        }
+    }
 
     // Cursor overlay: the recording was captured in Metadata mode, so without
     // this the pointer is invisible. Same object type as the live preview drives.
@@ -582,4 +606,12 @@ void RenderPipeline::teardownScene()
     m_surface = nullptr;
     delete m_gl;
     m_gl = nullptr;
+
+    // One-shot desktopBlur poster temp (if any) — every export exit path funnels
+    // through teardownScene(), so this is the single cleanup point.
+    if (!m_posterTemp.isEmpty()) {
+        if (QFile::exists(m_posterTemp))
+            QFile::remove(m_posterTemp);
+        m_posterTemp.clear();
+    }
 }

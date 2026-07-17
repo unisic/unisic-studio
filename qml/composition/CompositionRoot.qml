@@ -27,6 +27,11 @@ Item {
     // click ripples. Null-safe (the overlay hides itself). Set by the consumer
     // (preview: preview.cursor; export: the RenderPipeline).
     property var cursorPlayback: null
+    // A still (file:// URL) of the video's first frame, used ONLY by the
+    // "desktopBlur" background. Filled by the consumer (preview: the editor's
+    // PosterExtractor; export: RenderPipeline's one-shot extract). Empty → the
+    // desktopBlur background falls back to the flat fill colour.
+    property string posterSource: ""
 
     // The consumer parents its video (or poster) Item here and anchors.fill it.
     readonly property alias videoSlot: videoZoom
@@ -44,6 +49,7 @@ Item {
     readonly property int    _shadowOffsetY: styleModel ? styleModel.shadowOffsetY : 10
     readonly property string _frame:         styleModel ? styleModel.frameStyle : "none"
     readonly property string _frameTitle:    styleModel ? styleModel.frameTitle : ""
+    readonly property bool   _hasPoster:     root.posterSource !== ""
 
     // ---- Output geometry ----------------------------------------------------
     readonly property real _srcAspect: videoSize.height > 0
@@ -91,7 +97,8 @@ Item {
         // ---- Background ----
         Rectangle {                                     // color / desktopBlur(→color fallback)
             anchors.fill: parent
-            visible: root._bgType === "color" || root._bgType === "desktopBlur"
+            visible: root._bgType === "color"
+                     || (root._bgType === "desktopBlur" && !root._hasPoster)
             color: root._bgColor
         }
         Rectangle {                                     // gradient (vertical)
@@ -112,6 +119,35 @@ Item {
             clip: true
             asynchronous: true
             cache: true
+        }
+
+        // desktopBlur: a blurred + darkened cover-crop of the video's own first
+        // frame. HONEST APPROXIMATION — a true "desktop blur" would blur the
+        // user's actual wallpaper, which we never captured; the poster is the
+        // cheapest always-available stand-in. The poster is STATIC, so the layer
+        // caches to a texture and the blur shader runs ONCE, never per video
+        // frame (same discipline as the shadow/mask plates below).
+        Item {
+            anchors.fill: parent
+            visible: root._bgType === "desktopBlur" && root._hasPoster
+            Image {
+                id: blurPoster
+                anchors.fill: parent
+                source: root.posterSource
+                fillMode: Image.PreserveAspectCrop
+                clip: true
+                asynchronous: true
+                cache: true
+                layer.enabled: true
+                layer.effect: MultiEffect {
+                    blurEnabled: true
+                    blur: 1.0
+                    blurMax: 64
+                    saturation: -0.15
+                }
+            }
+            // Darkening scrim so the framed video card stays the focal point.
+            Rectangle { anchors.fill: parent; color: "#000000"; opacity: 0.45 }
         }
 
         // ---- Drop shadow (cached: static geometry → the costly blur computes

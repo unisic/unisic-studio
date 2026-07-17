@@ -263,6 +263,8 @@ Window {
                                                                       : Qt.rect(0, 0, 1, 1)
                 cursorPlayback: (typeof preview !== "undefined" && preview) ? preview.cursor : null
                 timeMs: (typeof preview !== "undefined" && preview) ? preview.timeMs : 0
+                // Feeds the "desktopBlur" background (poster of the first frame).
+                posterSource: editorWindow.posterSource
             }
 
             // Live video (only when QtMultimedia is present) parented into the

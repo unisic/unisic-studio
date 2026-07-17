@@ -268,7 +268,14 @@ int main(int argc, char *argv[])
             const int fi = args.indexOf(QStringLiteral("--format"));
             if (fi >= 0 && fi + 1 < args.size())
                 fmt = args.at(fi + 1);
-            QTimer::singleShot(0, &app, [in, out, cancelMs, fmt] {
+            // Optional: `--bg <type>` overrides the background (color/gradient/
+            // wallpaper/desktopBlur) so the desktopBlur poster path can be
+            // exercised headlessly.
+            QString bg = QStringLiteral("gradient");
+            const int bi = args.indexOf(QStringLiteral("--bg"));
+            if (bi >= 0 && bi + 1 < args.size())
+                bg = args.at(bi + 1);
+            QTimer::singleShot(0, &app, [in, out, cancelMs, fmt, bg] {
                 auto *probe = new VideoProbe(qApp);
                 QObject::connect(probe, &VideoProbe::failed, qApp, [](const QString &r) {
                     fprintf(stderr, "export-test: probe failed: %s\n", qPrintable(r));
@@ -277,7 +284,7 @@ int main(int argc, char *argv[])
                 });
                 QObject::connect(
                     probe, &VideoProbe::probed, qApp,
-                    [in, out, cancelMs, fmt](qint64 durationMs, double fps, const QSize &size) {
+                    [in, out, cancelMs, fmt, bg](qint64 durationMs, double fps, const QSize &size) {
                         auto *p = new StudioProject(qApp);
                         p->setVideoAbsPath(in);
                         p->setDurationMs(durationMs);
@@ -288,7 +295,7 @@ int main(int argc, char *argv[])
                         StyleModel *st = p->style();
                         st->setPaddingPct(12);
                         st->setCornerRadius(20);
-                        st->setBackgroundType(QStringLiteral("gradient"));
+                        st->setBackgroundType(bg);
                         st->setGradientStart(QColor(0xE0, 0x10, 0x40));
                         st->setGradientEnd(QColor(0x10, 0x20, 0xE0));
 
