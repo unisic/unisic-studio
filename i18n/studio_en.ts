@@ -447,70 +447,80 @@
 <context>
     <name>StudioApp</name>
     <message>
-        <location filename="../src/StudioApp.cpp" line="73"/>
+        <location filename="../src/StudioApp.cpp" line="90"/>
         <source>Import Video</source>
         <translation>Import Video</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="74"/>
+        <location filename="../src/StudioApp.cpp" line="91"/>
         <source>Videos (*.mp4 *.webm *.mkv *.mov)</source>
         <translation>Videos (*.mp4 *.webm *.mkv *.mov)</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="86"/>
+        <location filename="../src/StudioApp.cpp" line="103"/>
         <source>File not found: %1</source>
         <translation>File not found: %1</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="108"/>
-        <location filename="../src/StudioApp.cpp" line="135"/>
+        <location filename="../src/StudioApp.cpp" line="125"/>
+        <location filename="../src/StudioApp.cpp" line="152"/>
         <source>Could not open the editor window.</source>
         <translation>Could not open the editor window.</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="128"/>
+        <location filename="../src/StudioApp.cpp" line="145"/>
         <source>Could not open project</source>
         <translation>Could not open project</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="161"/>
+        <location filename="../src/StudioApp.cpp" line="178"/>
         <source>Save Project As</source>
         <translation>Save Project As</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="162"/>
+        <location filename="../src/StudioApp.cpp" line="179"/>
         <source>Unisic Studio Project (*.%1)</source>
         <translation>Unisic Studio Project (*.%1)</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="175"/>
+        <location filename="../src/StudioApp.cpp" line="192"/>
         <source>Untitled</source>
         <translation>Untitled</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="201"/>
+        <location filename="../src/StudioApp.cpp" line="218"/>
         <source>Project saved</source>
         <translation>Project saved</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="211"/>
+        <location filename="../src/StudioApp.cpp" line="228"/>
         <source>Choose wallpaper image</source>
         <translation>Choose wallpaper image</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="212"/>
+        <location filename="../src/StudioApp.cpp" line="229"/>
         <source>Images (*.png *.jpg *.jpeg *.webp *.bmp)</source>
         <translation>Images (*.png *.jpg *.jpeg *.webp *.bmp)</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="227"/>
+        <location filename="../src/StudioApp.cpp" line="244"/>
         <source>Export video</source>
         <translation>Export video</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="228"/>
+        <location filename="../src/StudioApp.cpp" line="245"/>
         <source>%1 video (*.%2)</source>
         <translation>%1 video (*.%2)</translation>
+    </message>
+    <message>
+        <location filename="../src/StudioApp.cpp" line="303"/>
+        <source>Recording failed: %1</source>
+        <translation>Recording failed: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/StudioApp.cpp" line="311"/>
+        <source>Recorded, but the project could not be opened: %1</source>
+        <translation>Recorded, but the project could not be opened: %1</translation>
     </message>
 </context>
 <context>
@@ -597,6 +607,77 @@
         <location filename="../src/project/StudioProject.cpp" line="264"/>
         <source>%1 was made by a newer version of Unisic Studio (schema %2, this build understands %3)</source>
         <translation>%1 was made by a newer version of Unisic Studio (schema %2, this build understands %3)</translation>
+    </message>
+</context>
+<context>
+    <name>StudioRecorder</name>
+    <message>
+        <location filename="../src/capture/StudioRecorder.cpp" line="93"/>
+        <source>Unisic Studio was built without PipeWire support, so recording is unavailable</source>
+        <translation>Unisic Studio was built without PipeWire support, so recording is unavailable</translation>
+    </message>
+    <message>
+        <location filename="../src/capture/StudioRecorder.cpp" line="146"/>
+        <source>Screen sharing was stopped</source>
+        <translation>Screen sharing was stopped</translation>
+    </message>
+    <message>
+        <location filename="../src/capture/StudioRecorder.cpp" line="177"/>
+        <source>Failed to connect to the PipeWire stream</source>
+        <translation>Failed to connect to the PipeWire stream</translation>
+    </message>
+    <message>
+        <location filename="../src/capture/StudioRecorder.cpp" line="215"/>
+        <source>PipeWire returned an invalid stream size</source>
+        <translation>PipeWire returned an invalid stream size</translation>
+    </message>
+    <message>
+        <location filename="../src/capture/StudioRecorder.cpp" line="223"/>
+        <source>Recording stream is too small</source>
+        <translation>Recording stream is too small</translation>
+    </message>
+    <message>
+        <location filename="../src/capture/StudioRecorder.cpp" line="314"/>
+        <location filename="../src/capture/StudioRecorder.cpp" line="345"/>
+        <location filename="../src/capture/StudioRecorder.cpp" line="603"/>
+        <location filename="../src/capture/StudioRecorder.cpp" line="611"/>
+        <source>ffmpeg could not be started. Is it installed?</source>
+        <translation>ffmpeg could not be started. Is it installed?</translation>
+    </message>
+    <message>
+        <location filename="../src/capture/StudioRecorder.cpp" line="327"/>
+        <source>Recording encoder crashed</source>
+        <translation>Recording encoder crashed</translation>
+    </message>
+    <message>
+        <location filename="../src/capture/StudioRecorder.cpp" line="328"/>
+        <source>Recording encoder stopped unexpectedly (code %1)</source>
+        <translation>Recording encoder stopped unexpectedly (code %1)</translation>
+    </message>
+    <message>
+        <location filename="../src/capture/StudioRecorder.cpp" line="336"/>
+        <source>Recording encoder failed (code %1)</source>
+        <translation>Recording encoder failed (code %1)</translation>
+    </message>
+    <message>
+        <location filename="../src/capture/StudioRecorder.cpp" line="523"/>
+        <source>Recording encoder is not running</source>
+        <translation>Recording encoder is not running</translation>
+    </message>
+    <message>
+        <location filename="../src/capture/StudioRecorder.cpp" line="565"/>
+        <source>Could not move the recording into the projects folder</source>
+        <translation>Could not move the recording into the projects folder</translation>
+    </message>
+    <message>
+        <location filename="../src/capture/StudioRecorder.cpp" line="590"/>
+        <source>Removing the paused sections failed</source>
+        <translation>Removing the paused sections failed</translation>
+    </message>
+    <message>
+        <location filename="../src/capture/StudioRecorder.cpp" line="635"/>
+        <source>Could not save the recording project: %1</source>
+        <translation>Could not save the recording project: %1</translation>
     </message>
 </context>
 <context>
