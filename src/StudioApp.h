@@ -1,5 +1,6 @@
 #pragma once
 #include <QObject>
+#include <QTimer>
 #include <QVariantList>
 #include <qqmlregistration.h>
 #include "StudioSettings.h"
@@ -11,6 +12,7 @@
 class QQmlEngine;
 class RecentProjects;
 class EditorWindowManager;
+class StudioRecorder;   // fwd-decl: capture subsystem, wired up in the .cpp
 
 // Application facade exposed to QML as the "Studio" context property (analogous
 // to Unisic's "App"). It COORDINATES — the substantial logic lives in focused
@@ -31,14 +33,34 @@ class StudioApp : public QObject
     // Recent-project tiles for the launcher: [{path,name,durationMs,lastOpened}].
     Q_PROPERTY(QVariantList recentProjects READ recentProjects NOTIFY recentProjectsChanged)
 
+    // Recording state machine, exposed thin (the logic lives in StudioRecorder).
+    Q_PROPERTY(int recorderState READ recorderState NOTIFY recorderStateChanged)
+    Q_PROPERTY(int recorderElapsed READ recorderElapsed NOTIFY recorderElapsedChanged)
+    Q_PROPERTY(int recorderCountdown READ recorderCountdown NOTIFY recorderCountdownChanged)
+    // Click-capture (libinput) availability; -1 = not yet probed. Probe lazily via
+    // refreshInputPermission() — never at startup.
+    Q_PROPERTY(int inputPermissionStatus READ inputPermissionStatus NOTIFY inputPermissionStatusChanged)
+
 public:
     explicit StudioApp(QObject *parent = nullptr);
+
+    // Recording phases surfaced to the shell. Arming = portal negotiating / stream
+    // held; Countdown = pre-roll ticking; Finalizing = encoder closing + excise +
+    // sidecar write. Mirrors StudioRecorder's internal states plus the app-owned
+    // countdown, so the QML can drive one control from a single enum.
+    enum RecorderState { RecIdle, RecArming, RecCountdown, RecRecording, RecPaused, RecFinalizing };
+    Q_ENUM(RecorderState)
 
     QString version() const;
     bool devBuild() const;
     StudioSettings *settings() const { return m_settings; }
     bool capVideoPlayback() const;
     QVariantList recentProjects() const;
+
+    int recorderState() const { return m_recorderState; }
+    int recorderElapsed() const;
+    int recorderCountdown() const { return m_recorderCountdown; }
+    int inputPermissionStatus() const { return m_inputPermission; }
 
     // Wire the QML engine once at startup so per-window editor contexts can be
     // built. Called from main.cpp after the engine exists.
@@ -73,8 +95,29 @@ public:
     // QDesktopServices). Used by the export "Reveal in folder" action.
     Q_INVOKABLE void revealInFolder(const QString &path);
 
+    // --- recording (M2) ---
+    // Begin a recording: constructs the recorder on first use (startup stays
+    // lazy), negotiates the portal, runs the countdown, then records. finished →
+    // the project opens in an editor window.
+    Q_INVOKABLE void startRecording();
+    Q_INVOKABLE void stopRecording();
+    Q_INVOKABLE void togglePauseRecording();
+    Q_INVOKABLE void cancelRecording();
+
+    // Re-probe click-capture (libinput) availability on demand; updates
+    // inputPermissionStatus. Cheap, but not free — call it when the UI needs it,
+    // not on a timer.
+    Q_INVOKABLE void refreshInputPermission();
+    // The copyable command that grants click-capture access (adds the user to the
+    // `input` group). The UI wraps its own explanatory text around it.
+    Q_INVOKABLE QString inputPermissionFixHint() const;
+
 signals:
     void recentProjectsChanged();
+    void recorderStateChanged();
+    void recorderElapsedChanged();
+    void recorderCountdownChanged();
+    void inputPermissionStatusChanged();
     // A user-facing message the shell surfaces as a toast (error=true → styled
     // as a failure).
     void notified(const QString &message, bool error);
@@ -87,8 +130,21 @@ private:
     bool doSave(StudioProject *project, const QString &path);
     QString defaultSavePath(StudioProject *project) const;
 
+    void ensureRecorder();                 // lazy construct + wire on first use
+    void setRecorderState(RecorderState s);
+    void onRecorderArmed();                // start the countdown (or commit now)
+    void stopCountdown();
+
     // Parent-owned (constructed with `this`): die with the facade, no leaks.
     StudioSettings *m_settings;
     RecentProjects *m_recent;
     EditorWindowManager *m_editors;
+
+    // Recording. m_recorder is null until the first startRecording() so the app
+    // pulls in no PipeWire/libinput state at launch.
+    StudioRecorder *m_recorder = nullptr;
+    RecorderState m_recorderState = RecIdle;
+    QTimer m_countdownTimer;
+    int m_recorderCountdown = 0;
+    int m_inputPermission = -1;            // -1 = not yet probed
 };

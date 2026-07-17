@@ -2,6 +2,8 @@
 
 #include "EditorWindowManager.h"
 #include "RecentProjects.h"
+#include "capture/InputPermission.h"
+#include "capture/StudioRecorder.h"
 #include "media/VideoProbe.h"
 #include "project/StudioProject.h"
 
@@ -21,6 +23,21 @@ StudioApp::StudioApp(QObject *parent)
     , m_editors(new EditorWindowManager(this))
 {
     connect(m_recent, &RecentProjects::changed, this, &StudioApp::recentProjectsChanged);
+
+    // Countdown pre-roll owned by the facade (the recorder only arms/commits — the
+    // portal dialog and this countdown must never land in the file).
+    m_countdownTimer.setInterval(1000);
+    m_countdownTimer.setTimerType(Qt::CoarseTimer);
+    connect(&m_countdownTimer, &QTimer::timeout, this, [this] {
+        if (--m_recorderCountdown > 0) {
+            emit recorderCountdownChanged();
+            return;
+        }
+        m_countdownTimer.stop();
+        emit recorderCountdownChanged();          // now 0
+        if (m_recorder)
+            m_recorder->commit();
+    });
 }
 
 QString StudioApp::version() const
@@ -242,4 +259,121 @@ void StudioApp::revealInFolder(const QString &path)
     const QString dir = QFileInfo(local).absolutePath();
     if (!dir.isEmpty())
         QDesktopServices::openUrl(QUrl::fromLocalFile(dir));
+}
+
+// --- recording ---------------------------------------------------------------
+
+int StudioApp::recorderElapsed() const
+{
+    return m_recorder ? m_recorder->elapsedSeconds() : 0;
+}
+
+void StudioApp::setRecorderState(RecorderState s)
+{
+    if (m_recorderState == s)
+        return;
+    m_recorderState = s;
+    emit recorderStateChanged();
+}
+
+void StudioApp::stopCountdown()
+{
+    m_countdownTimer.stop();
+    if (m_recorderCountdown != 0) {
+        m_recorderCountdown = 0;
+        emit recorderCountdownChanged();
+    }
+}
+
+void StudioApp::ensureRecorder()
+{
+    if (m_recorder)
+        return;
+    m_recorder = new StudioRecorder(m_settings, this);
+    connect(m_recorder, &StudioRecorder::armed, this, &StudioApp::onRecorderArmed);
+    connect(m_recorder, &StudioRecorder::started, this,
+            [this] { setRecorderState(RecRecording); });
+    connect(m_recorder, &StudioRecorder::paused, this,
+            [this](bool p) { setRecorderState(p ? RecPaused : RecRecording); });
+    connect(m_recorder, &StudioRecorder::elapsedChanged, this, &StudioApp::recorderElapsedChanged);
+    connect(m_recorder, &StudioRecorder::failed, this, [this](const QString &e) {
+        stopCountdown();
+        setRecorderState(RecIdle);
+        if (e != QLatin1String("cancelled"))
+            emit notified(tr("Recording failed: %1").arg(e), true);
+    });
+    connect(m_recorder, &StudioRecorder::finished, this, [this](const QString &projectPath) {
+        stopCountdown();
+        setRecorderState(RecIdle);
+        // Opens a fresh StudioProject in an editor window (the recorder's own copy
+        // was a throwaway used only to write the sidecar).
+        if (!openProject(projectPath))
+            emit notified(tr("Recorded, but the project could not be opened: %1").arg(projectPath), true);
+    });
+}
+
+void StudioApp::startRecording()
+{
+    ensureRecorder();
+    if (m_recorderState != RecIdle || m_recorder->recording())
+        return;
+    setRecorderState(RecArming);
+    m_recorder->start(/*holdForCommit=*/true);
+}
+
+void StudioApp::onRecorderArmed()
+{
+    const int secs = qBound(0, m_settings->recordCountdownSec(), 10);
+    if (secs <= 0) {
+        // No pre-roll: commit immediately (state stays Arming until started()).
+        m_recorder->commit();
+        return;
+    }
+    m_recorderCountdown = secs;
+    setRecorderState(RecCountdown);
+    emit recorderCountdownChanged();
+    m_countdownTimer.start();
+}
+
+void StudioApp::stopRecording()
+{
+    if (!m_recorder)
+        return;
+    // A stop during arming/countdown (before any frame) is a cancel.
+    if (m_recorderState == RecArming || m_recorderState == RecCountdown) {
+        cancelRecording();
+        return;
+    }
+    if (!m_recorder->recording())
+        return;
+    m_recorder->stop();
+    setRecorderState(RecFinalizing);
+}
+
+void StudioApp::togglePauseRecording()
+{
+    if (m_recorder)
+        m_recorder->togglePause();
+}
+
+void StudioApp::cancelRecording()
+{
+    stopCountdown();
+    if (m_recorder)
+        m_recorder->cancel();
+    setRecorderState(RecIdle);
+}
+
+void StudioApp::refreshInputPermission()
+{
+    const int s = int(InputPermission::probe());
+    if (s != m_inputPermission) {
+        m_inputPermission = s;
+        emit inputPermissionStatusChanged();
+    }
+}
+
+QString StudioApp::inputPermissionFixHint() const
+{
+    return InputPermission::fixHint();
 }
