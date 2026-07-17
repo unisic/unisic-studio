@@ -92,6 +92,14 @@ RenderPipeline::~RenderPipeline()
     if (m_encoder)
         FfmpegUtil::stopProcess(m_encoder);
     teardownScene();
+    // Torn down while an export was still running — the app was quit mid-export,
+    // which routes qApp→~ExportController→~RenderPipeline WITHOUT a cancel()/fail().
+    // The file on disk is a truncated partial; remove it so a broken clip can't
+    // masquerade as a finished export. A successful finish() has already cleared
+    // m_active (its real output is preserved); cancel()/fail() already deleted
+    // theirs, so this is then a no-op.
+    if (m_active)
+        deletePartialOutput();
 }
 
 void RenderPipeline::start(const Settings &settings)
