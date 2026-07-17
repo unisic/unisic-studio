@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Window
+import QtQuick.Controls
 import Unisic.Kit
 import UnisicStudio
 
@@ -72,6 +73,41 @@ Window {
     // timeline highlight); -1 == none. Row indices shift when keyframes are
     // added/removed, so a count change clears the selection.
     property int selectedKeyframe: -1
+
+    // ---- Keyboard-driven editing -------------------------------------------
+    // The smoothed preview clock is the shared playhead (timeline + transport read
+    // it too); arrow keys step relative to it.
+    readonly property int headMs: (typeof preview !== "undefined" && preview) ? preview.timeMs : curPos
+    readonly property real fps: (editorProject && editorProject.fps > 0) ? editorProject.fps : 30
+    readonly property int frameStepMs: Math.max(1, Math.round(1000 / fps))
+    // True while a text field owns focus — the character/navigation shortcuts stand
+    // down so typing a frame title or export filename isn't hijacked by Space/K/etc.
+    readonly property bool typingText: activeFocusItem instanceof TextInput
+
+    function stepBy(ms) { seekTo(Math.max(0, Math.min(curDur, headMs + ms))) }
+
+    // Delete the selected keyframe unless it is locked (locked keyframes survive
+    // regenerate; deleting one by a stray keypress would be surprising).
+    function deleteSelectedKeyframe() {
+        if (selectedKeyframe < 0 || !editorProject || !editorProject.zoom) return
+        var m = editorProject.zoom.keyframeAt(selectedKeyframe)
+        if (m && m.locked) return
+        var i = selectedKeyframe
+        selectedKeyframe = -1
+        editorProject.zoom.removeAt(i)
+    }
+
+    // 'K' — add a Manual zoom at the playhead, centred on the cursor when visible
+    // (same as the timeline's "+ Zoom").
+    function addZoomAtHead() {
+        if (!editorProject) return
+        var cx = 0.5, cy = 0.5
+        if (typeof preview !== "undefined" && preview && preview.cursor && preview.cursor.cursorVisible) {
+            cx = preview.cursor.nx; cy = preview.cursor.ny
+        }
+        var row = Studio.addManualZoom(editorProject, Math.round(headMs), cx, cy, 1.8)
+        if (row >= 0) selectedKeyframe = row
+    }
 
     // Output pixel aspect (drives the on-canvas crop editor's aspect lock).
     readonly property real srcAspect: (editorProject && editorProject.videoSize.height > 0)
@@ -151,10 +187,71 @@ Window {
         function onCountChanged() { editorWindow.selectedKeyframe = -1 }
     }
 
-    // Ctrl+S saves (silent after first save).
-    Shortcut {
+    // ---- Keyboard shortcuts -------------------------------------------------
+    // Active when the editor window holds focus; character/navigation bindings are
+    // suppressed while a text field is being edited (typingText).
+    Shortcut { // Ctrl+S saves (silent after first save).
         sequence: StandardKey.Save
         onActivated: if (editorProject) Studio.saveProject(editorProject)
+    }
+    Shortcut {
+        sequence: "Space"
+        enabled: !editorWindow.typingText
+        onActivated: editorWindow.playPause()
+    }
+    Shortcut {
+        sequence: "Left"
+        enabled: !editorWindow.typingText
+        onActivated: editorWindow.stepBy(-editorWindow.frameStepMs)
+    }
+    Shortcut {
+        sequence: "Right"
+        enabled: !editorWindow.typingText
+        onActivated: editorWindow.stepBy(editorWindow.frameStepMs)
+    }
+    Shortcut {
+        sequence: "Shift+Left"
+        enabled: !editorWindow.typingText
+        onActivated: editorWindow.stepBy(-1000)
+    }
+    Shortcut {
+        sequence: "Shift+Right"
+        enabled: !editorWindow.typingText
+        onActivated: editorWindow.stepBy(1000)
+    }
+    Shortcut {
+        sequence: "Home"
+        enabled: !editorWindow.typingText
+        onActivated: editorWindow.seekTo(editorWindow.trimInMs)
+    }
+    Shortcut {
+        sequence: "End"
+        enabled: !editorWindow.typingText
+        onActivated: editorWindow.seekTo(editorWindow.trimOutMs)
+    }
+    Shortcut {
+        sequences: [StandardKey.Delete, StandardKey.Backspace]
+        enabled: !editorWindow.typingText && editorWindow.selectedKeyframe >= 0
+        onActivated: editorWindow.deleteSelectedKeyframe()
+    }
+    Shortcut {
+        sequence: "K"
+        enabled: !editorWindow.typingText && editorProject !== null
+        onActivated: editorWindow.addZoomAtHead()
+    }
+    Shortcut { // Esc deselects the current keyframe (dialogs handle their own Esc).
+        sequence: StandardKey.Cancel
+        enabled: editorWindow.selectedKeyframe >= 0
+        onActivated: editorWindow.selectedKeyframe = -1
+    }
+    Shortcut { // Ctrl+E opens the export dialog.
+        sequence: "Ctrl+E"
+        enabled: editorProject !== null && !exportDialog.running
+        onActivated: { exportDialog.project = editorProject; exportDialog.open() }
+    }
+    Shortcut { // '?' / Ctrl+/ / F1 — the shortcut cheat sheet.
+        sequences: ["?", "Ctrl+/", "F1"]
+        onActivated: shortcutsPopup.open()
     }
 
     onClosing: (close) => {
@@ -288,6 +385,14 @@ Window {
                             }
                         }
                     }
+                }
+
+                UIconButton {
+                    // '?' glyph fallback (no iconName) so it's always visible.
+                    icon: "?"
+                    tooltip: qsTr("Keyboard shortcuts (?)")
+                    anchors.verticalCenter: parent.verticalCenter
+                    onClicked: shortcutsPopup.open()
                 }
 
                 UIconButton {
@@ -538,6 +643,74 @@ Window {
         onActivated: smokeDialog.run()
     }
     SmokeTestDialog { id: smokeDialog }
+
+    // Keyboard cheat sheet (themed Popup — no kit UShortcutsHelp component exists).
+    Popup {
+        id: shortcutsPopup
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        modal: true
+        focus: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        padding: Theme.spacingXL
+        Overlay.modal: Rectangle { color: Qt.rgba(0, 0, 0, 0.45) }
+        background: Rectangle {
+            radius: Theme.radiusL
+            color: Theme.surface
+            border.width: 1
+            border.color: Theme.divider
+        }
+        readonly property var _rows: [
+            { k: "Space",        a: qsTr("Play / pause") },
+            { k: "← / →",        a: qsTr("Step one frame") },
+            { k: "Shift + ← / →", a: qsTr("Jump one second") },
+            { k: "Home / End",   a: qsTr("Go to trim start / end") },
+            { k: "K",            a: qsTr("Add zoom at playhead") },
+            { k: "Delete",       a: qsTr("Delete selected keyframe") },
+            { k: "Esc",          a: qsTr("Deselect keyframe") },
+            { k: "Ctrl + S",     a: qsTr("Save project") },
+            { k: "Ctrl + E",     a: qsTr("Export…") },
+            { k: "?",            a: qsTr("Show this help") }
+        ]
+        contentItem: Column {
+            spacing: Theme.spacingM
+            Text {
+                text: qsTr("Keyboard shortcuts")
+                color: Theme.textPrimary
+                font.pixelSize: Theme.fontL
+                font.weight: Font.DemiBold
+            }
+            Column {
+                spacing: Theme.spacingS
+                Repeater {
+                    model: shortcutsPopup._rows
+                    Row {
+                        required property var modelData
+                        spacing: Theme.spacingL
+                        Text {
+                            width: 120
+                            text: modelData.k
+                            color: Theme.accent
+                            font.pixelSize: Theme.fontS
+                            font.weight: Font.DemiBold
+                        }
+                        Text {
+                            text: modelData.a
+                            color: Theme.textSecondary
+                            font.pixelSize: Theme.fontS
+                        }
+                    }
+                }
+            }
+            UButton {
+                anchors.right: parent.right
+                text: qsTr("Close")
+                variant: "filled"
+                compact: true
+                onClicked: shortcutsPopup.close()
+            }
+        }
+    }
 
     // Themed confirm on closing a dirty project (kit dialog, not QMessageBox).
     UConfirmDialog {
