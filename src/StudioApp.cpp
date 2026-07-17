@@ -1,17 +1,20 @@
 #include "StudioApp.h"
 
 #include "EditorWindowManager.h"
+#include "HudManager.h"
 #include "RecentProjects.h"
 #include "capture/InputPermission.h"
 #include "capture/StudioRecorder.h"
 #include "media/VideoProbe.h"
 #include "project/StudioProject.h"
 
+#include <QClipboard>
 #include <QCoreApplication>
 #include <QDesktopServices>
 #include <QDir>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QGuiApplication>
 #include <QLibraryInfo>
 #include <QStandardPaths>
 #include <QUrl>
@@ -21,6 +24,7 @@ StudioApp::StudioApp(QObject *parent)
     , m_settings(new StudioSettings(this))
     , m_recent(new RecentProjects(this))
     , m_editors(new EditorWindowManager(this))
+    , m_hud(new HudManager(this, this))
 {
     connect(m_recent, &RecentProjects::changed, this, &StudioApp::recentProjectsChanged);
 
@@ -74,6 +78,12 @@ QVariantList StudioApp::recentProjects() const
 void StudioApp::setEngine(QQmlEngine *engine)
 {
     m_editors->setEngine(engine);
+    m_hud->setEngine(engine);
+}
+
+bool StudioApp::devShowRecordingHud()
+{
+    return m_hud->showHud();
 }
 
 void StudioApp::quit()
@@ -261,6 +271,27 @@ void StudioApp::revealInFolder(const QString &path)
         QDesktopServices::openUrl(QUrl::fromLocalFile(dir));
 }
 
+QString StudioApp::pickProjectsDirectory(const QString &startDir)
+{
+    QString start = startDir;
+    if (start.startsWith(QStringLiteral("file:")))
+        start = QUrl(start).toLocalFile();
+    if (start.isEmpty() || !QFileInfo::exists(start))
+        start = m_settings->projectsDirectory();
+    if (start.isEmpty() || !QFileInfo::exists(start))
+        start = QStandardPaths::writableLocation(QStandardPaths::MoviesLocation);
+    if (start.isEmpty())
+        start = QDir::homePath();
+    // Native portal dialog (not a QML Dialog: Basic style falls back to an ugly one).
+    return QFileDialog::getExistingDirectory(nullptr, tr("Choose projects folder"), start);
+}
+
+void StudioApp::copyToClipboard(const QString &text)
+{
+    if (QClipboard *cb = QGuiApplication::clipboard())
+        cb->setText(text);
+}
+
 // --- recording ---------------------------------------------------------------
 
 int StudioApp::recorderElapsed() const
@@ -317,6 +348,10 @@ void StudioApp::startRecording()
     ensureRecorder();
     if (m_recorderState != RecIdle || m_recorder->recording())
         return;
+    // Probe click-capture once here (cheap, not on a timer) so the HUD's
+    // click-capture status dot reflects real permission for this session.
+    if (m_settings->clickCaptureEnabled())
+        refreshInputPermission();
     setRecorderState(RecArming);
     m_recorder->start(/*holdForCommit=*/true);
 }

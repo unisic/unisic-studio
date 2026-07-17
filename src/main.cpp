@@ -328,5 +328,31 @@ int main(int argc, char *argv[])
         }
     }
 
+    // Hidden dev aids for headless UI verification (no real recording/portal):
+    //   --page settings   open the Settings page on the main window at launch
+    //   --hud-test        instantiate the recording HUD in its idle state, then
+    //                     exit 0 (component OK) / 3 (build failed). Proves the QML
+    //                     loads under `offscreen` without a live PipeWire session.
+    {
+        const QStringList args = app.arguments();
+        const int pi = args.indexOf(QStringLiteral("--page"));
+        if (pi >= 0 && pi + 1 < args.size() && mainWin) {
+            const QString page = args.at(pi + 1);
+            const int idx = page == QLatin1String("settings") ? 1 : 0;
+            QTimer::singleShot(0, mainWin, [mainWin, idx] {
+                if (mainWin)
+                    mainWin->setProperty("currentPage", idx);
+            });
+        }
+        if (args.contains(QStringLiteral("--hud-test"))) {
+            QTimer::singleShot(0, &app, [&studio] {
+                const bool ok = studio.devShowRecordingHud();
+                fprintf(stderr, "hud-test: %s\n", ok ? "OK" : "FAILED");
+                fflush(stderr);
+                QTimer::singleShot(500, qApp, [ok] { QCoreApplication::exit(ok ? 0 : 3); });
+            });
+        }
+    }
+
     return app.exec();
 }

@@ -2,12 +2,13 @@ import QtQuick
 import QtQuick.Window
 import QtQuick.Effects
 import Unisic.Kit
+import UnisicStudio
 
-// M0 skeleton main window: themed chrome, a sidebar with two entries, and a
-// centered empty state. No recording/editing/export yet — the two primary
-// actions are deliberately disabled with "coming in" tooltips. Every
-// user-visible string is wrapped in qsTr(); every color comes from a Theme
-// token (zero hardcoded hex); every control is a kit component.
+// Main window: themed chrome, a sidebar (Projects / Settings) and either the
+// recent-projects area or the Settings page. "New Recording" drives the capture
+// flow (the recording HUD is a separate C++-created window; the main window can
+// hide itself while a recording is live). Every user-visible string is wrapped in
+// qsTr(); every color comes from a Theme token; every control is a kit component.
 Window {
     id: window
     width: 1280
@@ -28,31 +29,19 @@ Window {
         return (m < 10 ? "0" : "") + m + ":" + (s < 10 ? "0" : "") + s
     }
 
-    // A kit UButton disabled via `enabled: false` also disables its own
-    // MouseArea, so it can't drive a hover tooltip. Wrap it: the button shows
-    // disabled, an overlaid hover MouseArea drives a UHoverTip explaining when
-    // the action arrives.
-    component DisabledAction: Item {
-        id: da
-        property alias text: btn.text
-        property string variant: "filled"
-        property string iconName: ""
-        property string tip: ""
-        implicitWidth: btn.implicitWidth
-        implicitHeight: btn.implicitHeight
-        UButton {
-            id: btn
-            anchors.centerIn: parent
-            variant: da.variant
-            iconName: da.iconName
-            enabled: false
+    // Hide the main window while a recording is live so the shell doesn't land in
+    // the capture; it returns on stop/cancel/fail. The recording HUD is a separate
+    // always-on-top window (C++ HudManager), so it stays visible when this hides.
+    Connections {
+        target: Studio
+        function onRecorderStateChanged() {
+            if (!Studio.settings.hideWindowWhileRecording)
+                return
+            if (Studio.recorderState === StudioApp.RecIdle)
+                window.show()   // show (don't raise): a just-opened editor stays in front
+            else
+                window.hide()
         }
-        MouseArea {
-            id: hov
-            anchors.fill: parent
-            hoverEnabled: true
-        }
-        UHoverTip { anchor: da; text: da.tip; show: hov.containsMouse }
     }
 
     Rectangle { // content backdrop with a subtle vertical falloff
@@ -120,7 +109,6 @@ Window {
                 active: window.currentPage === 0
                 onClicked: window.currentPage = 0
             }
-            // Non-functional placeholder for M0 — the Settings page lands later.
             SidebarItem {
                 iconName: "configure"
                 label: qsTr("Settings")
@@ -142,6 +130,17 @@ Window {
         }
     }
 
+    // Settings page (lazy): shown when the Settings sidebar entry is active.
+    Loader {
+        anchors.left: sidebar.right
+        anchors.top: parent.top
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        active: window.currentPage === 1
+        visible: active
+        sourceComponent: SettingsPage {}
+    }
+
     // Main area: recent-projects grid, or a centered empty state when none.
     Item {
         id: content
@@ -149,6 +148,7 @@ Window {
         anchors.top: parent.top
         anchors.right: parent.right
         anchors.bottom: parent.bottom
+        visible: window.currentPage === 0
 
         readonly property bool hasRecents: Studio.recentProjects.length > 0
 
@@ -186,11 +186,11 @@ Window {
             Row {
                 anchors.horizontalCenter: parent.horizontalCenter
                 spacing: Theme.spacingM
-                DisabledAction {
+                UButton {
                     text: qsTr("New Recording")
                     variant: "filled"
                     iconName: "media-record"
-                    tip: qsTr("Coming in M2")
+                    onClicked: Studio.startRecording()
                 }
                 UButton {
                     text: qsTr("Import Video…")
@@ -225,11 +225,11 @@ Window {
                     anchors.verticalCenter: parent.verticalCenter
                     anchors.right: parent.right
                     spacing: Theme.spacingM
-                    DisabledAction {
+                    UButton {
                         text: qsTr("New Recording")
                         variant: "ghost"
                         iconName: "media-record"
-                        tip: qsTr("Coming in M2")
+                        onClicked: Studio.startRecording()
                     }
                     UButton {
                         text: qsTr("Import Video…")

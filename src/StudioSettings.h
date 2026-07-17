@@ -39,6 +39,7 @@ class StudioSettings : public QObject
     Q_PROPERTY(int recordCountdownSec READ recordCountdownSec WRITE setRecordCountdownSec NOTIFY recordCountdownSecChanged)
     Q_PROPERTY(int recordMaxDurationSec READ recordMaxDurationSec WRITE setRecordMaxDurationSec NOTIFY recordMaxDurationSecChanged)
     Q_PROPERTY(bool clickCaptureEnabled READ clickCaptureEnabled WRITE setClickCaptureEnabled NOTIFY clickCaptureEnabledChanged)
+    Q_PROPERTY(bool hideWindowWhileRecording READ hideWindowWhileRecording WRITE setHideWindowWhileRecording NOTIFY hideWindowWhileRecordingChanged)
 
 public:
     explicit StudioSettings(QObject *parent = nullptr) : QObject(parent)
@@ -82,6 +83,9 @@ public:
     U_SETTING(int, recordCountdownSec, setRecordCountdownSec, "recordCountdownSec", 3)
     U_SETTING(int, recordMaxDurationSec, setRecordMaxDurationSec, "recordMaxDurationSec", 0)
     U_SETTING(bool, clickCaptureEnabled, setClickCaptureEnabled, "clickCaptureEnabled", true)
+    // Hide the main window while a recording is live (like a screen recorder), so
+    // the shell doesn't land in the capture. It returns on stop/cancel/fail.
+    U_SETTING(bool, hideWindowWhileRecording, setHideWindowWhileRecording, "hideWindowWhileRecording", true)
 
 signals:
     void projectsDirectoryChanged();
@@ -94,6 +98,7 @@ signals:
     void recordCountdownSecChanged();
     void recordMaxDurationSecChanged();
     void clickCaptureEnabledChanged();
+    void hideWindowWhileRecordingChanged();
 
 private:
     QSettings m_s{UnisicKit::filePath(), QSettings::IniFormat};

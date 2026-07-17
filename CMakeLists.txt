@@ -42,6 +42,9 @@ qt_add_executable(unisic-studio
     # facade wires up (keeping StudioApp thin).
     src/RecentProjects.h src/RecentProjects.cpp
     src/EditorWindowManager.h src/EditorWindowManager.cpp
+    # Always-on-top recording HUD window (own frameless top-level window + per-window
+    # QQmlContext, created by C++ on record start, destroyed on idle).
+    src/HudManager.h src/HudManager.cpp
     # Media helpers: async ffprobe metadata + ffmpeg poster-frame extraction.
     # ffmpeg/ffprobe are shelled out (QStandardPaths-detected), never linked.
     src/media/VideoProbe.h src/media/VideoProbe.cpp
@@ -115,6 +118,8 @@ qt_add_qml_module(unisic-studio
     OUTPUT_DIRECTORY qmlmod/UnisicStudio
     QML_FILES
         qml/StudioMain.qml
+        qml/SettingsPage.qml
+        qml/RecordingHud.qml
         qml/EditorWindow.qml
         qml/InspectorPanel.qml
         qml/ExportDialog.qml

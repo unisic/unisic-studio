@@ -12,6 +12,7 @@
 class QQmlEngine;
 class RecentProjects;
 class EditorWindowManager;
+class HudManager;       // fwd-decl: owns the always-on-top recording HUD window
 class StudioRecorder;   // fwd-decl: capture subsystem, wired up in the .cpp
 
 // Application facade exposed to QML as the "Studio" context property (analogous
@@ -66,6 +67,11 @@ public:
     // built. Called from main.cpp after the engine exists.
     void setEngine(QQmlEngine *engine);
 
+    // Dev/self-test only: force-show the recording HUD in its idle state so its
+    // QML can be instantiated headlessly without a live portal session. Used by
+    // main.cpp's hidden --hud-test flag. Returns false if the component failed.
+    bool devShowRecordingHud();
+
     Q_INVOKABLE void quit();
 
     // Import: native open dialog → async ffprobe → new StudioProject → editor
@@ -94,6 +100,13 @@ public:
     // Open the containing folder of `path` in the file manager (xdg-open via
     // QDesktopServices). Used by the export "Reveal in folder" action.
     Q_INVOKABLE void revealInFolder(const QString &path);
+
+    // Native folder picker for the projects directory (Settings → Storage).
+    // Returns the chosen absolute path, or empty on cancel (QML keeps the old one).
+    Q_INVOKABLE QString pickProjectsDirectory(const QString &startDir = QString());
+
+    // Put `text` on the system clipboard (Settings input-permission "Copy" action).
+    Q_INVOKABLE void copyToClipboard(const QString &text);
 
     // --- recording (M2) ---
     // Begin a recording: constructs the recorder on first use (startup stays
@@ -139,6 +152,7 @@ private:
     StudioSettings *m_settings;
     RecentProjects *m_recent;
     EditorWindowManager *m_editors;
+    HudManager *m_hud;
 
     // Recording. m_recorder is null until the first startRecording() so the app
     // pulls in no PipeWire/libinput state at launch.
