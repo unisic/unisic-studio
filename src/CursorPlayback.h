@@ -66,6 +66,10 @@ class CursorPlayback : public QObject
     Q_PROPERTY(int shapeHeight READ shapeHeight NOTIFY shapeChanged)
     Q_PROPERTY(qreal hotspotX READ hotspotX NOTIFY shapeChanged)
     Q_PROPERTY(qreal hotspotY READ hotspotY NOTIFY shapeChanged)
+    // Milliseconds since the most recent click at/or-before the current time, or
+    // -1 if none yet. A pure function of time (like the ripples), so the cursor
+    // 'press' feedback it drives is identical in preview and export.
+    Q_PROPERTY(qreal msSinceClick READ msSinceClick NOTIFY sampleChanged)
     Q_PROPERTY(int rippleMs READ rippleMs CONSTANT)
     Q_PROPERTY(QAbstractListModel *ripples READ ripples CONSTANT)
 
@@ -93,6 +97,7 @@ public:
     int shapeHeight() const { return m_shapeH; }
     qreal hotspotX() const { return m_hotspotX; }
     qreal hotspotY() const { return m_hotspotY; }
+    qreal msSinceClick() const { return m_msSinceClick; }
     int rippleMs() const { return kRippleMs; }
     QAbstractListModel *ripples() const;
 
@@ -133,6 +138,7 @@ private:
     int m_shapeH = 0;
     qreal m_hotspotX = 0.0;
     qreal m_hotspotY = 0.0;
+    qreal m_msSinceClick = -1.0;        // for the cursor 'press' feedback
 
     mutable int m_lastIdx = 0;          // cursor-sample lookup hint
     int m_downCursor = 0;               // ripple-scan hint

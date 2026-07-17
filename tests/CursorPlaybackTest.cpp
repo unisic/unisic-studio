@@ -1,12 +1,26 @@
 #include "CursorPlayback.h"
 
 #include "ClickTrack.h"
+#include "CursorSmoother.h"
 #include "CursorTrack.h"
 
 #include <QSize>
 #include <QTest>
 
 #include <cmath>
+
+// CursorPlayback renders from a one-euro-SMOOTHED copy of the track (the virtual
+// cursor glides instead of reproducing raw jitter), so the reference the lookup
+// must agree with is the smoothed track, not the raw one. Smoothing preserves
+// tMs / visible / shapeId verbatim, so the index/visibility logic is unchanged.
+static CursorTrack smoothedRef(const CursorTrack &raw)
+{
+    CursorTrack out;
+    const CursorSmoother sm;
+    for (const CursorSample &s : sm.smooth(raw))
+        out.append(s);
+    return out;
+}
 
 // A scripted cursor path: a diagonal move with a couple of irregular gaps so the
 // lookup's cached-index advance is exercised over uneven spacing.
@@ -46,11 +60,12 @@ void CursorPlaybackTest::lookupMatchesCursorTrack()
 
     CursorPlayback pb(QStringLiteral("test"));
     pb.setTracks(track, clicks, video);
+    const CursorTrack ref_track = smoothedRef(track);
 
     // Sequential forward sweep at fine granularity (the O(1) hot path).
     for (qint64 t = 0; t <= 7000; t += 7) {
         pb.setTime(t);
-        const CursorSample ref = track.sample(t);
+        const CursorSample ref = ref_track.sample(t);
         QVERIFY(std::fabs(pb.nx() - ref.x / video.width()) < 1e-9);
         QVERIFY(std::fabs(pb.ny() - ref.y / video.height()) < 1e-9);
         QCOMPARE(pb.cursorVisible(), ref.visible);
@@ -63,12 +78,13 @@ void CursorPlaybackTest::lookupHandlesSeeksAndClamp()
     const QSize video(1920, 1080);
     CursorPlayback pb(QStringLiteral("test"));
     pb.setTracks(track, ClickTrack{}, video);
+    const CursorTrack ref_track = smoothedRef(track);
 
     // Random-ish jumps (backward seeks, out-of-range clamps) must still match.
     const qint64 probes[] = {5000, 10, 3333, 0, 6999, 200, -100, 99999, 1500};
     for (qint64 t : probes) {
         pb.setTime(t);
-        const CursorSample ref = track.sample(t);
+        const CursorSample ref = ref_track.sample(t);
         QVERIFY(std::fabs(pb.nx() - ref.x / video.width()) < 1e-9);
         QVERIFY(std::fabs(pb.ny() - ref.y / video.height()) < 1e-9);
     }

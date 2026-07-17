@@ -441,6 +441,69 @@ Rectangle {
                         value: sm ? sm.cornerRadius : 0
                         onMoved: (v) => { if (sm) sm.cornerRadius = Math.round(v) }
                     }
+                    // Crop-to-fill vs letterbox. Changing it re-frames the auto camera
+                    // (manual/locked keyframes are kept), so regenerate on change.
+                    LabeledCombo {
+                        label: qsTr("Fill mode")
+                        model: [qsTr("Crop to fill"), qsTr("Fit (letterbox)")]
+                        currentIndex: (sm && sm.fillMode === "fit") ? 1 : 0
+                        onActivated: (i) => {
+                            if (!sm) return
+                            sm.fillMode = i === 1 ? "fit" : "fill"
+                            if (typeof editorProject !== "undefined" && editorProject)
+                                Studio.regenerateZoom(editorProject)
+                        }
+                    }
+                }
+            }
+
+            // ---- Cursor ----
+            UCard {
+                width: parent.width
+                Column {
+                    width: parent.width
+                    spacing: Theme.spacingM
+                    Text {
+                        text: qsTr("Cursor")
+                        color: Theme.textPrimary
+                        font.pixelSize: Theme.fontM
+                        font.weight: Font.DemiBold
+                    }
+                    LabeledCombo {
+                        label: qsTr("Style")
+                        model: [qsTr("Pointer"), qsTr("System"), qsTr("Dot"), qsTr("Circle")]
+                        readonly property var ids: ["pointer", "system", "dot", "circle"]
+                        currentIndex: sm ? Math.max(0, ids.indexOf(sm.cursorStyle)) : 0
+                        onActivated: (i) => { if (sm) sm.cursorStyle = ids[i] }
+                    }
+                    LabeledSlider {
+                        label: qsTr("Size")
+                        from: 0.5; to: 3.0; stepSize: 0.1; decimals: 1; suffix: "×"
+                        value: sm ? sm.cursorScale : 1.6
+                        onMoved: (v) => { if (sm) sm.cursorScale = v }
+                    }
+                    Row {
+                        width: parent.width
+                        Text {
+                            text: qsTr("Click ripple")
+                            color: Theme.textSecondary
+                            font.pixelSize: Theme.fontS
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: parent.width - rippleSwitch.width
+                            elide: Text.ElideRight
+                        }
+                        USwitch {
+                            id: rippleSwitch
+                            checked: sm ? sm.clickRipple : true
+                            onToggled: (c) => { if (sm) sm.clickRipple = c }
+                        }
+                    }
+                    ColorRow {
+                        visible: sm && sm.clickRipple
+                        label: qsTr("Ripple color")
+                        color: sm ? sm.rippleColor : "#C8ACD6"
+                        onPicked: (c) => { if (sm) sm.rippleColor = c }
+                    }
                 }
             }
 

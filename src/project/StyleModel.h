@@ -33,8 +33,12 @@ class StyleModel : public QObject
     Q_PROPERTY(QString frameTitle READ frameTitle WRITE setFrameTitle NOTIFY frameTitleChanged)
     // source | 16:9 | 9:16 | 1:1
     Q_PROPERTY(QString aspect READ aspect WRITE setAspect NOTIFY aspectChanged)
+    // fit | fill. 'fill' crops the source to the OUTPUT aspect (Screen-Studio-style
+    // follow-the-action framing, no letterbox bars); 'fit' letterboxes the whole
+    // frame. Coincides for a source-aspect output. Default 'fill'.
+    Q_PROPERTY(QString fillMode READ fillMode WRITE setFillMode NOTIFY fillModeChanged)
     Q_PROPERTY(double cursorScale READ cursorScale WRITE setCursorScale NOTIFY cursorScaleChanged)
-    // system | dot | circle
+    // pointer | system | dot | circle
     Q_PROPERTY(QString cursorStyle READ cursorStyle WRITE setCursorStyle NOTIFY cursorStyleChanged)
     Q_PROPERTY(bool clickRipple READ clickRipple WRITE setClickRipple NOTIFY clickRippleChanged)
     Q_PROPERTY(QColor rippleColor READ rippleColor WRITE setRippleColor NOTIFY rippleColorChanged)
@@ -62,6 +66,7 @@ public:
     QString frameStyle() const { return m_frameStyle; }
     QString frameTitle() const { return m_frameTitle; }
     QString aspect() const { return m_aspect; }
+    QString fillMode() const { return m_fillMode; }
     double cursorScale() const { return m_cursorScale; }
     QString cursorStyle() const { return m_cursorStyle; }
     bool clickRipple() const { return m_clickRipple; }
@@ -84,6 +89,7 @@ public:
     void setFrameStyle(const QString &v);
     void setFrameTitle(const QString &v);
     void setAspect(const QString &v);
+    void setFillMode(const QString &v);
     void setCursorScale(double v);
     void setCursorStyle(const QString &v);
     void setClickRipple(bool v);
@@ -110,6 +116,7 @@ signals:
     void frameStyleChanged();
     void frameTitleChanged();
     void aspectChanged();
+    void fillModeChanged();
     void cursorScaleChanged();
     void cursorStyleChanged();
     void clickRippleChanged();
@@ -137,8 +144,9 @@ private:
     QString m_frameStyle = QStringLiteral("none");
     QString m_frameTitle;
     QString m_aspect = QStringLiteral("source");
-    double m_cursorScale = 1.0;
-    QString m_cursorStyle = QStringLiteral("system");
+    QString m_fillMode = QStringLiteral("fill");
+    double m_cursorScale = 1.6;
+    QString m_cursorStyle = QStringLiteral("pointer");
     bool m_clickRipple = true;
     QColor m_rippleColor = QColor(0xC8, 0xAC, 0xD6);        // Accent
     bool m_webcamEnabled = false;

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 26" width="20" height="26">
+  <!-- macOS-like arrow pointer: white fill, dark outline. Tip (hotspot) at (1.5,1.5).
+       Rendered by CursorOverlay for the 'pointer' cursor style; the recorded bitmap
+       is never used for this style. A subtle drop shadow is applied in QML. -->
+  <path d="M1.5 1.5 L1.5 20.5 L6.5 15.5 L9.8 22.4 L12.6 21.1 L9.4 14.5 L16.4 14.5 Z"
+        fill="#ffffff" stroke="#141414" stroke-width="1.5" stroke-linejoin="round"/>
+</svg>

@@ -191,6 +191,11 @@ target_link_libraries(unisic-studio PRIVATE
 qt_add_resources(unisic-studio "icons" PREFIX "/"
     FILES resources/icons/unisic-studio.svg)
 
+# Built-in virtual cursor art (the polished 'pointer' style — NOT the recorded
+# bitmap). qt6-qtsvg is a required dependency, so an SVG is the lean choice.
+qt_add_resources(unisic-studio "cursors" PREFIX "/"
+    FILES resources/cursors/pointer.svg)
+
 # Translations (optional): needs Qt6 LinguistTools. English is the source
 # language; only studio_en.ts exists for M0, but the wiring is ready for more.
 # `cmake --build build --target update_translations` rescans C++ + QML and
@@ -309,10 +314,11 @@ if(BUILD_TESTING)
     qt_add_executable(studio_cursor_playback_test
         tests/CursorPlaybackTest.cpp
         src/CursorPlayback.h src/CursorPlayback.cpp
+        src/engine/CursorSmoother.h src/engine/CursorSmoother.cpp
         src/project/CursorTrack.h src/project/CursorTrack.cpp
         src/project/ClickTrack.h src/project/ClickTrack.cpp)
     target_link_libraries(studio_cursor_playback_test PRIVATE Qt6::Core Qt6::Gui Qt6::Test)
-    target_include_directories(studio_cursor_playback_test PRIVATE src src/project)
+    target_include_directories(studio_cursor_playback_test PRIVATE src src/project src/engine)
     add_test(NAME studio_cursor_playback_test COMMAND studio_cursor_playback_test)
 endif()
 

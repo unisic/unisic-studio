@@ -115,6 +115,14 @@ void StyleModel::setAspect(const QString &v)
     emit changed();
 }
 
+void StyleModel::setFillMode(const QString &v)
+{
+    if (m_fillMode == v) return;
+    m_fillMode = v;
+    emit fillModeChanged();
+    emit changed();
+}
+
 void StyleModel::setCursorScale(double v)
 {
     if (qFuzzyCompare(m_cursorScale, v)) return;
@@ -196,6 +204,7 @@ QJsonObject StyleModel::toJson() const
         {QStringLiteral("frameStyle"), m_frameStyle},
         {QStringLiteral("frameTitle"), m_frameTitle},
         {QStringLiteral("aspect"), m_aspect},
+        {QStringLiteral("fillMode"), m_fillMode},
         {QStringLiteral("cursorScale"), m_cursorScale},
         {QStringLiteral("cursorStyle"), m_cursorStyle},
         {QStringLiteral("clickRipple"), m_clickRipple},
@@ -230,6 +239,7 @@ void StyleModel::fromJson(const QJsonObject &o)
     setFrameStyle(o.value(QStringLiteral("frameStyle")).toString(m_frameStyle));
     setFrameTitle(o.value(QStringLiteral("frameTitle")).toString(m_frameTitle));
     setAspect(o.value(QStringLiteral("aspect")).toString(m_aspect));
+    setFillMode(o.value(QStringLiteral("fillMode")).toString(m_fillMode));
     setCursorScale(o.value(QStringLiteral("cursorScale")).toDouble(m_cursorScale));
     setCursorStyle(o.value(QStringLiteral("cursorStyle")).toString(m_cursorStyle));
     setClickRipple(o.value(QStringLiteral("clickRipple")).toBool(m_clickRipple));

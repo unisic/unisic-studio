@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Effects
 
 // The cursor + click-ripple layer, drawn ON the video and INSIDE the zoom
 // transform (it is a child of CompositionRoot's videoZoom), so it scales and pans
@@ -32,6 +33,24 @@ Item {
     readonly property real _cursorY: cursorData ? cursorData.ny * height : 0
     readonly property bool _cursorVisible: cursorData ? cursorData.cursorVisible : false
 
+    // Subtle 'press' dip: the cursor scales to 0.9 the instant a click lands and
+    // eases back over 120 ms. A pure function of msSinceClick (deterministic in
+    // time), so preview and export dip identically. Only when ripples are enabled.
+    readonly property real _pressScale: {
+        if (!_rippleOn || !cursorData) return 1.0
+        var ms = cursorData.msSinceClick
+        if (ms < 0 || ms >= 120) return 1.0
+        return 0.9 + 0.1 * (ms / 120)
+    }
+
+    // Built-in 'pointer' arrow geometry (SVG authored in a 20x26 box, tip at
+    // (1.5,1.5)). Rasterised at the un-pressed size so a press doesn't re-raster.
+    readonly property real _ptrBaseH: 28 * _dispScale * _cursorScale
+    readonly property real _ptrH: _ptrBaseH * _pressScale
+    readonly property real _ptrW: _ptrH * (20 / 26)
+    readonly property real _ptrHotX: _ptrW * (1.5 / 20)
+    readonly property real _ptrHotY: _ptrH * (1.5 / 26)
+
     // ---- Click ripples (deterministic: phase == (time - clickTime)/rippleMs) --
     Repeater {
         model: overlay.cursorData ? overlay.cursorData.ripples : null
@@ -61,6 +80,32 @@ Item {
     }
 
     // ---- The pointer ---------------------------------------------------------
+    // Default 'pointer' style: a polished built-in vector arrow (macOS-like: white
+    // fill, dark outline, subtle drop shadow), NEVER the recorded bitmap. Its tip
+    // (the SVG hotspot) sits on the smoothed cursor position.
+    Image {
+        visible: overlay._cursorVisible && overlay._style === "pointer"
+        source: "qrc:/resources/cursors/pointer.svg"
+        // Rasterise crisp at the un-pressed display size (stable across a press).
+        sourceSize: Qt.size(Math.max(2, Math.round(overlay._ptrBaseH * 20 / 26)),
+                            Math.max(2, Math.round(overlay._ptrBaseH)))
+        width: overlay._ptrW
+        height: overlay._ptrH
+        x: overlay._cursorX - overlay._ptrHotX
+        y: overlay._cursorY - overlay._ptrHotY
+        smooth: true
+        cache: true
+        layer.enabled: true
+        layer.effect: MultiEffect {
+            shadowEnabled: true
+            shadowColor: "#000000"
+            shadowBlur: 0.6
+            shadowVerticalOffset: Math.max(1, overlay._ptrH * 0.03)
+            shadowHorizontalOffset: 0
+            shadowOpacity: 0.35
+        }
+    }
+
     // System style: the recorded bitmap, anchored at its hotspot.
     Image {
         visible: overlay._cursorVisible && overlay._style === "system"
@@ -86,7 +131,7 @@ Item {
 
     // Dot / circle style: a synthetic pointer in the ripple-derived colour.
     Rectangle {
-        readonly property real _d: overlay.width * 0.02 * overlay._cursorScale
+        readonly property real _d: overlay.width * 0.02 * overlay._cursorScale * overlay._pressScale
         visible: overlay._cursorVisible
                  && (overlay._style === "dot" || overlay._style === "circle")
         x: overlay._cursorX - _d / 2

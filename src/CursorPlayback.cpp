@@ -1,5 +1,7 @@
 #include "CursorPlayback.h"
 
+#include "engine/CursorSmoother.h"
+
 #include <QImage>
 
 #include <utility>
@@ -64,7 +66,17 @@ CursorPlayback::CursorPlayback(QString projectId, QObject *parent)
 
 void CursorPlayback::setTracks(const CursorTrack &cursor, const ClickTrack &clicks, QSize videoSize)
 {
-    m_cursor = cursor;
+    // The overlay renders from a SMOOTHED cursor track: raw PipeWire samples are
+    // integer stream pixels that jitter a pixel or two at rest, so a raw pointer
+    // twitches. One-euro filtering (engine defaults) gives a virtual cursor that
+    // glides. tMs / visible / shapeId pass through the filter unchanged, so the
+    // O(1) index lookup and shape/visibility logic are identical to the raw track;
+    // only x/y are eased. This is a private cached copy — the project keeps the raw
+    // track for the zoom engine and click-position resolution.
+    m_cursor.clear();
+    const CursorSmoother smoother;
+    for (const CursorSample &s : smoother.smooth(cursor))
+        m_cursor.append(s);
     m_invW = videoSize.width() > 0 ? 1.0 / videoSize.width() : 1.0;
     m_invH = videoSize.height() > 0 ? 1.0 / videoSize.height() : 1.0;
 
@@ -189,6 +201,21 @@ void CursorPlayback::setTime(qint64 tMs)
         m_activeScratch.append({e.x * m_invW, e.y * m_invH, e.tMs, j});
     }
     m_ripples->setActive(m_activeScratch);
+
+    // Time since the most recent click at/or-before t (the 'press' feedback). A
+    // pure function of time, so preview and export dip identically. Binary search
+    // the sorted down list for the last event with tMs <= t.
+    m_msSinceClick = -1.0;
+    if (!m_downs.isEmpty()) {
+        int lo = 0, hi = m_downs.size() - 1, idx = -1;
+        while (lo <= hi) {
+            const int mid = (lo + hi) / 2;
+            if (m_downs.at(mid).tMs <= tMs) { idx = mid; lo = mid + 1; }
+            else hi = mid - 1;
+        }
+        if (idx >= 0)
+            m_msSinceClick = double(tMs - m_downs.at(idx).tMs);
+    }
 }
 
 QAbstractListModel *CursorPlayback::ripples() const
