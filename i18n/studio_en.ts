@@ -9,67 +9,72 @@
         <translation>Untitled</translation>
     </message>
     <message>
-        <location filename="../qml/EditorWindow.qml" line="118"/>
+        <location filename="../qml/EditorWindow.qml" line="146"/>
         <source>Minimize</source>
         <translation>Minimize</translation>
     </message>
     <message>
-        <location filename="../qml/EditorWindow.qml" line="122"/>
+        <location filename="../qml/EditorWindow.qml" line="150"/>
         <source>Maximize</source>
         <translation>Maximize</translation>
     </message>
     <message>
-        <location filename="../qml/EditorWindow.qml" line="128"/>
+        <location filename="../qml/EditorWindow.qml" line="156"/>
         <source>Close</source>
         <translation>Close</translation>
     </message>
     <message>
-        <location filename="../qml/EditorWindow.qml" line="175"/>
+        <location filename="../qml/EditorWindow.qml" line="205"/>
         <source>Aspect</source>
         <translation>Aspect</translation>
     </message>
     <message>
-        <location filename="../qml/EditorWindow.qml" line="184"/>
+        <location filename="../qml/EditorWindow.qml" line="214"/>
         <source>Source</source>
         <translation>Source</translation>
     </message>
     <message>
-        <location filename="../qml/EditorWindow.qml" line="196"/>
+        <location filename="../qml/EditorWindow.qml" line="226"/>
         <source>Save (Ctrl+S)</source>
         <translation>Save (Ctrl+S)</translation>
     </message>
     <message>
-        <location filename="../qml/EditorWindow.qml" line="205"/>
+        <location filename="../qml/EditorWindow.qml" line="235"/>
         <source>Export</source>
         <translation>Export</translation>
     </message>
     <message>
-        <location filename="../qml/EditorWindow.qml" line="254"/>
+        <location filename="../qml/EditorWindow.qml" line="289"/>
         <source>Preview unavailable</source>
         <translation>Preview unavailable</translation>
     </message>
     <message>
-        <location filename="../qml/EditorWindow.qml" line="277"/>
+        <location filename="../qml/EditorWindow.qml" line="338"/>
+        <source>Click: add zoom · Double-click: reset</source>
+        <translation>Click: add zoom · Double-click: reset</translation>
+    </message>
+    <message>
+        <location filename="../qml/EditorWindow.qml" line="379"/>
         <source>Play / pause</source>
         <translation>Play / pause</translation>
     </message>
     <message>
-        <location filename="../qml/EditorWindow.qml" line="314"/>
+        <location filename="../qml/EditorWindow.qml" line="416"/>
         <source>Discard unsaved changes?</source>
         <translation>Discard unsaved changes?</translation>
     </message>
     <message>
-        <location filename="../qml/EditorWindow.qml" line="315"/>
+        <location filename="../qml/EditorWindow.qml" line="417"/>
         <source>Your changes will be lost. Save first with Ctrl+S.</source>
         <translation>Your changes will be lost. Save first with Ctrl+S.</translation>
     </message>
     <message>
-        <location filename="../qml/EditorWindow.qml" line="316"/>
+        <location filename="../qml/EditorWindow.qml" line="418"/>
         <source>Discard</source>
         <translation>Discard</translation>
     </message>
     <message>
-        <location filename="../qml/EditorWindow.qml" line="317"/>
+        <location filename="../qml/EditorWindow.qml" line="419"/>
         <source>Keep editing</source>
         <translation>Keep editing</translation>
     </message>
@@ -238,123 +243,163 @@
 <context>
     <name>InspectorPanel</name>
     <message>
-        <location filename="../qml/InspectorPanel.qml" line="112"/>
-        <location filename="../qml/InspectorPanel.qml" line="251"/>
+        <location filename="../qml/InspectorPanel.qml" line="135"/>
+        <location filename="../qml/InspectorPanel.qml" line="424"/>
         <source>Style</source>
         <translation>Style</translation>
     </message>
     <message>
-        <location filename="../qml/InspectorPanel.qml" line="125"/>
+        <location filename="../qml/InspectorPanel.qml" line="152"/>
+        <source>Zoom keyframe</source>
+        <translation>Zoom keyframe</translation>
+    </message>
+    <message>
+        <location filename="../qml/InspectorPanel.qml" line="164"/>
+        <source>Deselect</source>
+        <translation>Deselect</translation>
+    </message>
+    <message>
+        <location filename="../qml/InspectorPanel.qml" line="170"/>
+        <source>Zoom</source>
+        <translation>Zoom</translation>
+    </message>
+    <message>
+        <location filename="../qml/InspectorPanel.qml" line="184"/>
+        <source>Position</source>
+        <translation>Position</translation>
+    </message>
+    <message>
+        <location filename="../qml/InspectorPanel.qml" line="223"/>
+        <source>Ease in</source>
+        <translation>Ease in</translation>
+    </message>
+    <message>
+        <location filename="../qml/InspectorPanel.qml" line="238"/>
+        <source>Ease out</source>
+        <translation>Ease out</translation>
+    </message>
+    <message>
+        <location filename="../qml/InspectorPanel.qml" line="257"/>
+        <source>Locked</source>
+        <translation>Locked</translation>
+    </message>
+    <message>
+        <location filename="../qml/InspectorPanel.qml" line="277"/>
+        <source>Delete</source>
+        <translation>Delete</translation>
+    </message>
+    <message>
+        <location filename="../qml/InspectorPanel.qml" line="298"/>
         <source>Background</source>
         <translation>Background</translation>
     </message>
     <message>
-        <location filename="../qml/InspectorPanel.qml" line="131"/>
+        <location filename="../qml/InspectorPanel.qml" line="304"/>
         <source>Type</source>
         <translation>Type</translation>
     </message>
     <message>
-        <location filename="../qml/InspectorPanel.qml" line="132"/>
+        <location filename="../qml/InspectorPanel.qml" line="305"/>
         <source>Color</source>
         <translation>Color</translation>
     </message>
     <message>
-        <location filename="../qml/InspectorPanel.qml" line="132"/>
+        <location filename="../qml/InspectorPanel.qml" line="305"/>
         <source>Gradient</source>
         <translation>Gradient</translation>
     </message>
     <message>
-        <location filename="../qml/InspectorPanel.qml" line="132"/>
+        <location filename="../qml/InspectorPanel.qml" line="305"/>
         <source>Wallpaper</source>
         <translation>Wallpaper</translation>
     </message>
     <message>
-        <location filename="../qml/InspectorPanel.qml" line="138"/>
+        <location filename="../qml/InspectorPanel.qml" line="311"/>
         <source>Fill</source>
         <translation>Fill</translation>
     </message>
     <message>
-        <location filename="../qml/InspectorPanel.qml" line="144"/>
+        <location filename="../qml/InspectorPanel.qml" line="317"/>
         <source>Top</source>
         <translation>Top</translation>
     </message>
     <message>
-        <location filename="../qml/InspectorPanel.qml" line="150"/>
+        <location filename="../qml/InspectorPanel.qml" line="323"/>
         <source>Bottom</source>
         <translation>Bottom</translation>
     </message>
     <message>
-        <location filename="../qml/InspectorPanel.qml" line="161"/>
+        <location filename="../qml/InspectorPanel.qml" line="334"/>
         <source>No image selected</source>
         <translation>No image selected</translation>
     </message>
     <message>
-        <location filename="../qml/InspectorPanel.qml" line="167"/>
+        <location filename="../qml/InspectorPanel.qml" line="340"/>
         <source>Browse…</source>
         <translation>Browse…</translation>
     </message>
     <message>
-        <location filename="../qml/InspectorPanel.qml" line="185"/>
+        <location filename="../qml/InspectorPanel.qml" line="358"/>
         <source>Layout</source>
         <translation>Layout</translation>
     </message>
     <message>
-        <location filename="../qml/InspectorPanel.qml" line="191"/>
+        <location filename="../qml/InspectorPanel.qml" line="364"/>
         <source>Padding</source>
         <translation>Padding</translation>
     </message>
     <message>
-        <location filename="../qml/InspectorPanel.qml" line="197"/>
+        <location filename="../qml/InspectorPanel.qml" line="370"/>
         <source>Corner radius</source>
         <translation>Corner radius</translation>
     </message>
     <message>
-        <location filename="../qml/InspectorPanel.qml" line="212"/>
+        <location filename="../qml/InspectorPanel.qml" line="385"/>
         <source>Shadow</source>
         <translation>Shadow</translation>
     </message>
     <message>
-        <location filename="../qml/InspectorPanel.qml" line="218"/>
+        <location filename="../qml/InspectorPanel.qml" line="391"/>
         <source>Blur</source>
         <translation>Blur</translation>
     </message>
     <message>
-        <location filename="../qml/InspectorPanel.qml" line="224"/>
+        <location filename="../qml/InspectorPanel.qml" line="397"/>
         <source>Opacity</source>
         <translation>Opacity</translation>
     </message>
     <message>
-        <location filename="../qml/InspectorPanel.qml" line="230"/>
+        <location filename="../qml/InspectorPanel.qml" line="403"/>
         <source>Offset Y</source>
         <translation>Offset Y</translation>
     </message>
     <message>
-        <location filename="../qml/InspectorPanel.qml" line="245"/>
+        <location filename="../qml/InspectorPanel.qml" line="418"/>
         <source>Frame</source>
         <translation>Frame</translation>
     </message>
     <message>
-        <location filename="../qml/InspectorPanel.qml" line="252"/>
+        <location filename="../qml/InspectorPanel.qml" line="425"/>
         <source>None</source>
         <translation>None</translation>
     </message>
     <message>
-        <location filename="../qml/InspectorPanel.qml" line="252"/>
+        <location filename="../qml/InspectorPanel.qml" line="425"/>
         <source>Minimal</source>
         <translation>Minimal</translation>
     </message>
     <message>
-        <location filename="../qml/InspectorPanel.qml" line="252"/>
+        <location filename="../qml/InspectorPanel.qml" line="425"/>
         <source>Title bar</source>
         <translation>Title bar</translation>
     </message>
     <message>
-        <location filename="../qml/InspectorPanel.qml" line="261"/>
+        <location filename="../qml/InspectorPanel.qml" line="434"/>
         <source>Title</source>
         <translation>Title</translation>
     </message>
     <message>
-        <location filename="../qml/InspectorPanel.qml" line="267"/>
+        <location filename="../qml/InspectorPanel.qml" line="440"/>
         <source>Window title</source>
         <translation>Window title</translation>
     </message>
@@ -459,52 +504,52 @@
 <context>
     <name>RenderPipeline</name>
     <message>
-        <location filename="../src/render/RenderPipeline.cpp" line="132"/>
+        <location filename="../src/render/RenderPipeline.cpp" line="135"/>
         <source>Could not create an OpenGL context for rendering.</source>
         <translation>Could not create an OpenGL context for rendering.</translation>
     </message>
     <message>
-        <location filename="../src/render/RenderPipeline.cpp" line="139"/>
+        <location filename="../src/render/RenderPipeline.cpp" line="142"/>
         <source>Could not create an offscreen rendering surface.</source>
         <translation>Could not create an offscreen rendering surface.</translation>
     </message>
     <message>
-        <location filename="../src/render/RenderPipeline.cpp" line="143"/>
+        <location filename="../src/render/RenderPipeline.cpp" line="146"/>
         <source>Could not activate the OpenGL rendering context.</source>
         <translation>Could not activate the OpenGL rendering context.</translation>
     </message>
     <message>
-        <location filename="../src/render/RenderPipeline.cpp" line="165"/>
+        <location filename="../src/render/RenderPipeline.cpp" line="171"/>
         <source>The composition scene failed to load.</source>
         <translation>The composition scene failed to load.</translation>
     </message>
     <message>
-        <location filename="../src/render/RenderPipeline.cpp" line="178"/>
+        <location filename="../src/render/RenderPipeline.cpp" line="195"/>
         <source>The composition scene is missing its video slot.</source>
         <translation>The composition scene is missing its video slot.</translation>
     </message>
     <message>
-        <location filename="../src/render/RenderPipeline.cpp" line="191"/>
+        <location filename="../src/render/RenderPipeline.cpp" line="208"/>
         <source>Offscreen GPU rendering could not be initialized on this system. Try again with the environment variable QT_QUICK_BACKEND=software.</source>
         <translation>Offscreen GPU rendering could not be initialized on this system. Try again with the environment variable QT_QUICK_BACKEND=software.</translation>
     </message>
     <message>
-        <location filename="../src/render/RenderPipeline.cpp" line="219"/>
+        <location filename="../src/render/RenderPipeline.cpp" line="236"/>
         <source>ffmpeg was not found on your system — install ffmpeg.</source>
         <translation>ffmpeg was not found on your system — install ffmpeg.</translation>
     </message>
     <message>
-        <location filename="../src/render/RenderPipeline.cpp" line="253"/>
+        <location filename="../src/render/RenderPipeline.cpp" line="270"/>
         <source>The encoder exited with code %1.</source>
         <translation>The encoder exited with code %1.</translation>
     </message>
     <message>
-        <location filename="../src/render/RenderPipeline.cpp" line="260"/>
+        <location filename="../src/render/RenderPipeline.cpp" line="277"/>
         <source>Could not run the encoder: %1</source>
         <translation>Could not run the encoder: %1</translation>
     </message>
     <message>
-        <location filename="../src/render/RenderPipeline.cpp" line="266"/>
+        <location filename="../src/render/RenderPipeline.cpp" line="283"/>
         <source>Could not start the encoder: %1</source>
         <translation>Could not start the encoder: %1</translation>
     </message>
@@ -718,83 +763,83 @@
 <context>
     <name>StudioApp</name>
     <message>
-        <location filename="../src/StudioApp.cpp" line="100"/>
+        <location filename="../src/StudioApp.cpp" line="106"/>
         <source>Import Video</source>
         <translation>Import Video</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="101"/>
+        <location filename="../src/StudioApp.cpp" line="107"/>
         <source>Videos (*.mp4 *.webm *.mkv *.mov)</source>
         <translation>Videos (*.mp4 *.webm *.mkv *.mov)</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="113"/>
+        <location filename="../src/StudioApp.cpp" line="119"/>
         <source>File not found: %1</source>
         <translation>File not found: %1</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="135"/>
-        <location filename="../src/StudioApp.cpp" line="162"/>
+        <location filename="../src/StudioApp.cpp" line="141"/>
+        <location filename="../src/StudioApp.cpp" line="171"/>
         <source>Could not open the editor window.</source>
         <translation>Could not open the editor window.</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="155"/>
+        <location filename="../src/StudioApp.cpp" line="161"/>
         <source>Could not open project</source>
         <translation>Could not open project</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="188"/>
+        <location filename="../src/StudioApp.cpp" line="197"/>
         <source>Save Project As</source>
         <translation>Save Project As</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="189"/>
+        <location filename="../src/StudioApp.cpp" line="198"/>
         <source>Unisic Studio Project (*.%1)</source>
         <translation>Unisic Studio Project (*.%1)</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="202"/>
+        <location filename="../src/StudioApp.cpp" line="211"/>
         <source>Untitled</source>
         <translation>Untitled</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="228"/>
+        <location filename="../src/StudioApp.cpp" line="237"/>
         <source>Project saved</source>
         <translation>Project saved</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="238"/>
+        <location filename="../src/StudioApp.cpp" line="247"/>
         <source>Choose wallpaper image</source>
         <translation>Choose wallpaper image</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="239"/>
+        <location filename="../src/StudioApp.cpp" line="248"/>
         <source>Images (*.png *.jpg *.jpeg *.webp *.bmp)</source>
         <translation>Images (*.png *.jpg *.jpeg *.webp *.bmp)</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="254"/>
+        <location filename="../src/StudioApp.cpp" line="263"/>
         <source>Export video</source>
         <translation>Export video</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="255"/>
+        <location filename="../src/StudioApp.cpp" line="264"/>
         <source>%1 video (*.%2)</source>
         <translation>%1 video (*.%2)</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="286"/>
+        <location filename="../src/StudioApp.cpp" line="295"/>
         <source>Choose projects folder</source>
         <translation>Choose projects folder</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="334"/>
+        <location filename="../src/StudioApp.cpp" line="343"/>
         <source>Recording failed: %1</source>
         <translation>Recording failed: %1</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="342"/>
+        <location filename="../src/StudioApp.cpp" line="351"/>
         <source>Recorded, but the project could not be opened: %1</source>
         <translation>Recorded, but the project could not be opened: %1</translation>
     </message>
@@ -849,32 +894,32 @@
 <context>
     <name>StudioProject</name>
     <message>
-        <location filename="../src/project/StudioProject.cpp" line="197"/>
+        <location filename="../src/project/StudioProject.cpp" line="206"/>
         <source>Cannot open %1 for writing: %2</source>
         <translation>Cannot open %1 for writing: %2</translation>
     </message>
     <message>
-        <location filename="../src/project/StudioProject.cpp" line="202"/>
+        <location filename="../src/project/StudioProject.cpp" line="211"/>
         <source>Failed to write %1: %2</source>
         <translation>Failed to write %1: %2</translation>
     </message>
     <message>
-        <location filename="../src/project/StudioProject.cpp" line="234"/>
+        <location filename="../src/project/StudioProject.cpp" line="243"/>
         <source>Cannot open %1: %2</source>
         <translation>Cannot open %1: %2</translation>
     </message>
     <message>
-        <location filename="../src/project/StudioProject.cpp" line="246"/>
+        <location filename="../src/project/StudioProject.cpp" line="255"/>
         <source>%1 looks compressed but could not be decompressed</source>
         <translation>%1 looks compressed but could not be decompressed</translation>
     </message>
     <message>
-        <location filename="../src/project/StudioProject.cpp" line="256"/>
+        <location filename="../src/project/StudioProject.cpp" line="265"/>
         <source>%1 is not a valid project file: %2</source>
         <translation>%1 is not a valid project file: %2</translation>
     </message>
     <message>
-        <location filename="../src/project/StudioProject.cpp" line="264"/>
+        <location filename="../src/project/StudioProject.cpp" line="273"/>
         <source>%1 was made by a newer version of Unisic Studio (schema %2, this build understands %3)</source>
         <translation>%1 was made by a newer version of Unisic Studio (schema %2, this build understands %3)</translation>
     </message>
@@ -948,6 +993,47 @@
         <location filename="../src/capture/StudioRecorder.cpp" line="642"/>
         <source>Could not save the recording project: %1</source>
         <translation>Could not save the recording project: %1</translation>
+    </message>
+</context>
+<context>
+    <name>Timeline</name>
+    <message>
+        <location filename="../qml/Timeline.qml" line="61"/>
+        <source>Regenerate auto-zoom</source>
+        <translation>Regenerate auto-zoom</translation>
+    </message>
+    <message>
+        <location filename="../qml/Timeline.qml" line="68"/>
+        <source>+ Zoom</source>
+        <translation>+ Zoom</translation>
+    </message>
+    <message numerus="yes">
+        <location filename="../qml/Timeline.qml" line="89"/>
+        <source>%n zoom point(s)</source>
+        <translation>
+            <numerusform>%n zoom point</numerusform>
+            <numerusform>%n zoom points</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location filename="../qml/Timeline.qml" line="289"/>
+        <source>Regenerate automatic zoom?</source>
+        <translation>Regenerate automatic zoom?</translation>
+    </message>
+    <message>
+        <location filename="../qml/Timeline.qml" line="290"/>
+        <source>Replaces automatic zoom points; manual and locked ones stay.</source>
+        <translation>Replaces automatic zoom points; manual and locked ones stay.</translation>
+    </message>
+    <message>
+        <location filename="../qml/Timeline.qml" line="291"/>
+        <source>Regenerate</source>
+        <translation>Regenerate</translation>
+    </message>
+    <message>
+        <location filename="../qml/Timeline.qml" line="292"/>
+        <source>Cancel</source>
+        <translation>Cancel</translation>
     </message>
 </context>
 <context>
