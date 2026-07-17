@@ -107,8 +107,15 @@ public:
     Q_INVOKABLE QString pickExportOutput(const QString &format, const QString &startPath = QString());
 
     // Open the containing folder of `path` in the file manager (xdg-open via
-    // QDesktopServices). Used by the export "Reveal in folder" action.
+    // QDesktopServices). Used by the export "Show in folder" action.
     Q_INVOKABLE void revealInFolder(const QString &path);
+
+    // Open `path` itself in the user's default app (the export "Open file" action).
+    Q_INVOKABLE void openFile(const QString &path);
+
+    // Native folder picker for the export destination directory. Returns the chosen
+    // absolute path, or empty on cancel (the dialog keeps the previous folder).
+    Q_INVOKABLE QString pickExportFolder(const QString &startDir = QString());
 
     // Native folder picker for the projects directory (Settings → Storage).
     // Returns the chosen absolute path, or empty on cancel (QML keeps the old one).

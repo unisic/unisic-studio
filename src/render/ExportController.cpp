@@ -136,6 +136,25 @@ QString ExportController::suggestedOutputPath(StudioProject *project) const
            + extension();
 }
 
+QString ExportController::suggestedDir(StudioProject *project) const
+{
+    if (!project)
+        return QString();
+    const QString video = project->videoResolved().isEmpty() ? project->videoAbsPath()
+                                                             : project->videoResolved();
+    return QFileInfo(video).absolutePath();
+}
+
+QString ExportController::suggestedBaseName(StudioProject *project) const
+{
+    if (!project)
+        return QStringLiteral("export");
+    const QString video = project->videoResolved().isEmpty() ? project->videoAbsPath()
+                                                             : project->videoResolved();
+    const QString base = QFileInfo(video).completeBaseName();
+    return base.isEmpty() ? QStringLiteral("export") : base;
+}
+
 void ExportController::start(StudioProject *project)
 {
     if (m_state == Running)

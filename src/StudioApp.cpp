@@ -288,6 +288,29 @@ void StudioApp::revealInFolder(const QString &path)
         QDesktopServices::openUrl(QUrl::fromLocalFile(dir));
 }
 
+void StudioApp::openFile(const QString &path)
+{
+    QString local = path;
+    if (local.startsWith(QStringLiteral("file:")))
+        local = QUrl(local).toLocalFile();
+    if (!local.isEmpty() && QFileInfo::exists(local))
+        QDesktopServices::openUrl(QUrl::fromLocalFile(local));
+}
+
+QString StudioApp::pickExportFolder(const QString &startDir)
+{
+    QString start = startDir;
+    if (start.startsWith(QStringLiteral("file:")))
+        start = QUrl(start).toLocalFile();
+    if (start.isEmpty() || !QFileInfo::exists(start))
+        start = QStandardPaths::writableLocation(QStandardPaths::MoviesLocation);
+    if (start.isEmpty())
+        start = QDir::homePath();
+    // Native portal dialog (Basic style's own folder dialog is ugly), same as
+    // pickProjectsDirectory.
+    return QFileDialog::getExistingDirectory(nullptr, tr("Choose export folder"), start);
+}
+
 QString StudioApp::pickProjectsDirectory(const QString &startDir)
 {
     QString start = startDir;

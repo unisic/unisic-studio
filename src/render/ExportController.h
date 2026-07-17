@@ -70,6 +70,12 @@ public:
     // destination field with this when the dialog opens.
     Q_INVOKABLE QString suggestedOutputPath(StudioProject *project) const;
 
+    // Split defaults for the folder + filename destination fields: the video's own
+    // folder, and its base name (no extension). The dialog seeds its editable
+    // filename from the base name + a date and appends the format's extension.
+    Q_INVOKABLE QString suggestedDir(StudioProject *project) const;
+    Q_INVOKABLE QString suggestedBaseName(StudioProject *project) const;
+
     // Begin an export of `project` with the current settings. No-op if already
     // Running or if inputs are invalid (emits an Error state with a message).
     Q_INVOKABLE void start(StudioProject *project);
