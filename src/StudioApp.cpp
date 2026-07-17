@@ -447,7 +447,10 @@ void StudioApp::generateZoom(StudioProject *project, bool onlyIfEmpty)
     if (onlyIfEmpty && !zoom->keyframes().isEmpty())
         return;                                   // already has a timeline
 
-    const KeyframeEngine::Params params = KeyframeEngine::Params::fromJson(zoom->autoParams());
+    KeyframeEngine::Params params = KeyframeEngine::Params::fromJson(zoom->autoParams());
+    // Crop-to-fill vs letterbox is a StyleModel choice; feed it to the engine so the
+    // base (non-zoomed) camera is an output-aspect crop that follows the action.
+    params.fill = project->style() && project->style()->fillMode() == QLatin1String("fill");
 
     // Pinned = the survivors clearAuto() keeps (Manual or locked) so the engine
     // routes its auto spans around the user's own work.
@@ -502,7 +505,16 @@ int StudioApp::addResetZoom(StudioProject *project, qint64 tMs)
         return -1;
     ZoomTimeline::Keyframe kf;
     kf.tMs = qBound<qint64>(0, tMs, qMax<qint64>(0, project->durationMs()));
-    kf.rect = QRectF(0, 0, 1, 1);
+    // In fill mode "reset" is the centred output-aspect base crop (which fills the
+    // frame), not the letterboxed whole frame — matching the auto base camera.
+    const bool fill = project->style() && project->style()->fillMode() == QLatin1String("fill");
+    if (fill) {
+        const QString aspect =
+            project->style() ? project->style()->aspect() : QStringLiteral("source");
+        kf.rect = KeyframeEngine::cameraRect(project->videoSize(), aspect, QPointF(0.5, 0.5), 1.0);
+    } else {
+        kf.rect = QRectF(0, 0, 1, 1);
+    }
     kf.easeInMs = 650;
     kf.easeOutMs = 900;
     kf.source = ZoomTimeline::Manual;

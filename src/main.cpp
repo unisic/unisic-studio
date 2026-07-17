@@ -311,6 +311,12 @@ int main(int argc, char *argv[])
             const int bi = args.indexOf(QStringLiteral("--bg"));
             if (bi >= 0 && bi + 1 < args.size())
                 bg = args.at(bi + 1);
+            // Optional: `--aspect <source|16:9|9:16|1:1>` exercises the crop-to-fill
+            // path (the base view becomes an output-aspect crop, no letterbox).
+            QString aspect = QStringLiteral("source");
+            const int ai = args.indexOf(QStringLiteral("--aspect"));
+            if (ai >= 0 && ai + 1 < args.size())
+                aspect = args.at(ai + 1);
             // Optional: `--trim-in <ms>` / `--trim-out <ms>` exercise the trim
             // path (preview clamp shares the same range; export uses -ss/-t).
             qint64 trimIn = -1, trimOut = -1;
@@ -320,7 +326,7 @@ int main(int argc, char *argv[])
             const int toi = args.indexOf(QStringLiteral("--trim-out"));
             if (toi >= 0 && toi + 1 < args.size())
                 trimOut = args.at(toi + 1).toLongLong();
-            QTimer::singleShot(0, &app, [in, out, cancelMs, fmt, bg, trimIn, trimOut] {
+            QTimer::singleShot(0, &app, [in, out, cancelMs, fmt, bg, trimIn, trimOut, aspect] {
                 auto *probe = new VideoProbe(qApp);
                 QObject::connect(probe, &VideoProbe::failed, qApp, [](const QString &r) {
                     fprintf(stderr, "export-test: probe failed: %s\n", qPrintable(r));
@@ -329,8 +335,9 @@ int main(int argc, char *argv[])
                 });
                 QObject::connect(
                     probe, &VideoProbe::probed, qApp,
-                    [in, out, cancelMs, fmt, bg, trimIn, trimOut](qint64 durationMs, double fps,
-                                                                  const QSize &size) {
+                    [in, out, cancelMs, fmt, bg, trimIn, trimOut, aspect](qint64 durationMs,
+                                                                         double fps,
+                                                                         const QSize &size) {
                         auto *p = new StudioProject(qApp);
                         p->setVideoAbsPath(in);
                         p->setDurationMs(durationMs);
@@ -346,6 +353,7 @@ int main(int argc, char *argv[])
                         st->setPaddingPct(12);
                         st->setCornerRadius(20);
                         st->setBackgroundType(bg);
+                        st->setAspect(aspect);
                         st->setGradientStart(QColor(0xE0, 0x10, 0x40));
                         st->setGradientEnd(QColor(0x10, 0x20, 0xE0));
 

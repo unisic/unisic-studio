@@ -59,14 +59,21 @@ public:
         double idleSpeedFracPerSec = 0.02; // speed threshold, width-fraction / s
         // --- zoom geometry ---
         double zoomMin = 1.4;              // gentlest zoom (linear scale vs full)
-        double zoomMax = 2.5;              // tightest zoom
-        double marginFrac = 0.12;          // padding around the cluster bbox
+        double zoomMax = 2.8;              // tightest zoom (retuned up for tighter framing)
+        double marginFrac = 0.10;          // padding around the cluster bbox (retuned tighter)
         // --- dead-zone camera ---
-        double deadZoneFrac = 0.35;        // inner fraction of the view the cursor
-                                           // roams without the camera panning
+        double deadZoneFrac = 0.28;        // inner fraction of the view the cursor
+                                           // roams without the camera panning (retuned
+                                           // smaller so the camera tracks the click closer)
         // --- dwell fallback (no clicks) ---
         int dwellMinMs = 900;              // min sustained slow-motion to count
         double dwellSpeedFracPerSec = 0.02;// speed threshold for a dwell
+        // --- crop-to-fill (aspect fill mode) ---
+        // When true, the base (non-zoomed) camera is the largest centred OUTPUT-
+        // aspect crop of the source instead of the whole frame, and it slow-pans to
+        // follow the cursor between interaction segments (Screen-Studio behaviour, no
+        // letterbox bars). Coincides with the whole frame for a source-aspect output.
+        bool fill = false;
 
         QJsonObject toJson() const;
         static Params fromJson(const QJsonObject &o);

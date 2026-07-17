@@ -171,10 +171,14 @@ Rectangle {
             }
         }
 
-        // Keyframe blocks.
+        // Keyframe blocks. z ABOVE the playhead + trim handles: a freshly added
+        // zoom sits exactly under the playhead, whose full-height grab MouseArea
+        // otherwise swallowed the selection click (the root cause of "manual editing
+        // is unusable" — the block was never the topmost item, so the press seeked
+        // instead of selecting). Raised here so the block wins the press.
         Repeater {
             model: timeline.zoom
-            delegate: Rectangle {
+            delegate: Item {
                 id: block
                 required property int index
                 required property real tMs
@@ -184,27 +188,41 @@ Rectangle {
                 property bool dragging: false
                 property real dragX: 0
 
-                width: 12
-                height: 26
-                radius: Theme.radiusS
-                y: rail.y + (rail.height - height) / 2
+                // ≥16px hit target; the visible pill is centred inside it.
+                width: 18
+                height: rail.height + 8
+                y: rail.y - 4
                 x: (dragging ? dragX : timeline.xForMs(tMs)) - width / 2
-                // Auto = tertiary tint, Manual = secondary; selected = accent ring.
-                color: source === 1 ? Theme.secondary : Theme.tertiary
-                border.width: isSel ? 2 : 1
-                border.color: isSel ? Theme.accent : Theme.divider
+                z: 6
 
-                UIcon {
-                    visible: block.locked
+                Rectangle {
+                    id: pill
                     anchors.centerIn: parent
-                    name: "lock"
-                    size: 10
-                    color: Theme.textPrimary
+                    width: 12
+                    height: 26
+                    radius: Theme.radiusS
+                    // Auto = tertiary tint, Manual = secondary; selected = accent ring.
+                    color: source === 1 ? Theme.secondary : Theme.tertiary
+                    border.width: block.isSel ? 2 : (blockHov.containsMouse ? 2 : 1)
+                    border.color: block.isSel ? Theme.accent
+                                : (blockHov.containsMouse ? Theme.accent : Theme.divider)
+                    scale: (blockHov.containsMouse || block.isSel) ? 1.12 : 1.0
+                    Behavior on scale { NumberAnimation { duration: Theme.animFast } }
+
+                    UIcon {
+                        visible: block.locked
+                        anchors.centerIn: parent
+                        name: "lock"
+                        size: 10
+                        color: Theme.textPrimary
+                    }
                 }
 
                 MouseArea {
+                    id: blockHov
                     anchors.fill: parent
-                    anchors.margins: -3
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
                     onPressed: (m) => {
                         timeline.selectKeyframe(block.index)
                         block.dragX = block.x + block.width / 2

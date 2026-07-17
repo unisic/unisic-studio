@@ -32,6 +32,10 @@ Item {
     // PosterExtractor; export: RenderPipeline's one-shot extract). Empty → the
     // desktopBlur background falls back to the flat fill colour.
     property string posterSource: ""
+    // Editor-only: while a zoom keyframe's on-canvas rect editor is open, show the
+    // WHOLE source frame (source aspect, identity crop) so the crop box maps 1:1 to
+    // the video card. The export renderer never sets this.
+    property bool editRect: false
 
     // The consumer parents its video (or poster) Item here and anchors.fill it.
     readonly property alias videoSlot: videoZoom
@@ -72,6 +76,32 @@ Item {
         default:     return _srcAspect          // "source"
         }
     }
+    // Crop-to-fill vs letterbox. In fill mode the video card takes the OUTPUT
+    // aspect and the source is cropped to fill it (no letterbox bars, Screen-Studio
+    // behaviour); in fit mode the card keeps the SOURCE aspect and is letterboxed
+    // into the output canvas. Coincides for a source-aspect output.
+    readonly property string _fillMode: styleModel ? styleModel.fillMode : "fill"
+    readonly property bool   _fill:      _fillMode === "fill" && !editRect
+    readonly property real   _videoAspect: _fill ? _aspect : _srcAspect
+    // Largest centred OUTPUT-aspect crop of the source (source-normalised coords).
+    readonly property real _cropW: _aspect >= _srcAspect ? 1.0 : _aspect / _srcAspect
+    readonly property real _cropH: _aspect >= _srcAspect ? _srcAspect / _aspect : 1.0
+    // Effective camera viewport. The keyframe engine emits output-aspect crop rects
+    // in fill mode, but a project with no cursor track has no keyframes, so zoomRect
+    // arrives as the identity (0,0,1,1). Mapping that source-aspect rect onto the
+    // output-aspect card would stretch the video, so substitute the centred base
+    // crop. (Fill keyframes never evaluate to an exact identity, so real camera
+    // motion is untouched; a source-aspect output makes the crop the whole frame.)
+    readonly property rect _effZoom: {
+        if (editRect)
+            return Qt.rect(0, 0, 1, 1)        // show the whole source while editing a crop
+        if (!_fill)
+            return zoomRect
+        if (Math.abs(zoomRect.x) < 1e-6 && Math.abs(zoomRect.y) < 1e-6
+                && Math.abs(zoomRect.width - 1) < 1e-6 && Math.abs(zoomRect.height - 1) < 1e-6)
+            return Qt.rect((1 - _cropW) / 2, (1 - _cropH) / 2, _cropW, _cropH)
+        return zoomRect
+    }
     // Composition canvas: the styled frame, aspect-fit (contain) inside root.
     readonly property real canvasW: (root.width / Math.max(1, root.height)) > _aspect
                                     ? root.height * _aspect : root.width
@@ -89,10 +119,11 @@ Item {
     // Title-bar strip height (0 unless the titlebar frame is chosen).
     readonly property real barH: _frame === "titlebar"
                                  ? Math.round(Math.min(Math.max(innerW * 0.045, 22), 46)) : 0
-    // The video is aspect-fit (source ratio) within the area left after the bar.
+    // The video card is fit (fit mode: SOURCE ratio, letterboxed) or fills to the
+    // OUTPUT ratio (fill mode) within the area left after the bar.
     readonly property real _availH: Math.max(1, innerH - barH)
-    readonly property real videoDispW: (innerW / _availH) > _srcAspect ? _availH * _srcAspect : innerW
-    readonly property real videoDispH: (innerW / _availH) > _srcAspect ? _availH : innerW / _srcAspect
+    readonly property real videoDispW: (innerW / _availH) > _videoAspect ? _availH * _videoAspect : innerW
+    readonly property real videoDispH: (innerW / _availH) > _videoAspect ? _availH : innerW / _videoAspect
     // The framed window = title bar + video region.
     readonly property real holderW: videoDispW
     readonly property real holderH: videoDispH + barH
@@ -257,12 +288,12 @@ Item {
                     transformOrigin: Item.TopLeft
                     transform: [
                         Scale {
-                            xScale: 1 / Math.max(0.0001, root.zoomRect.width)
-                            yScale: 1 / Math.max(0.0001, root.zoomRect.height)
+                            xScale: 1 / Math.max(0.0001, root._effZoom.width)
+                            yScale: 1 / Math.max(0.0001, root._effZoom.height)
                         },
                         Translate {
-                            x: -root.zoomRect.x * videoZoom.width / Math.max(0.0001, root.zoomRect.width)
-                            y: -root.zoomRect.y * videoZoom.height / Math.max(0.0001, root.zoomRect.height)
+                            x: -root._effZoom.x * videoZoom.width / Math.max(0.0001, root._effZoom.width)
+                            y: -root._effZoom.y * videoZoom.height / Math.max(0.0001, root._effZoom.height)
                         }
                     ]
 

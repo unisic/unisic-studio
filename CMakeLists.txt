@@ -145,6 +145,7 @@ qt_add_qml_module(unisic-studio
         qml/RecordingHud.qml
         qml/EditorWindow.qml
         qml/InspectorPanel.qml
+        qml/ZoomRectEditor.qml
         qml/ExportDialog.qml
         qml/Timeline.qml
         qml/SmokeTestDialog.qml

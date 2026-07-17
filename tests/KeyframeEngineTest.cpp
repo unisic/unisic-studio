@@ -75,6 +75,7 @@ private slots:
     void noClicksDwellFallback();
     void pinnedRoutesAround();
     void nonMatchingAspectRects();
+    void fillModeBaseRectAspect();
     void evaluateContinuity();
     void determinism();
     void paramsJsonRoundtrip();
@@ -263,6 +264,57 @@ void KeyframeEngineTest::nonMatchingAspectRects()
     // aspect even though the full-frame rects stay 16:9.
     const auto kfs = KeyframeEngine::generate(cur, clk, kVideo, dur, "1:1", {});
     checkInvariants(kfs, dur, 1.0);
+}
+
+void KeyframeEngineTest::fillModeBaseRectAspect()
+{
+    CursorTrack cur;
+    moveLine(cur, 200, 300, 1600, 800, 0, 8000);
+    ClickTrack clk;
+    click(clk, 3000, 900, 500);
+    click(clk, 3300, 920, 510);
+    click(clk, 3600, 910, 505);
+
+    const qint64 dur = 8000;
+    // 9:16 output out of a 16:9 source, fill mode: the base (non-zoomed) camera is
+    // the largest centred output-aspect crop, NOT the whole frame — so EVERY rect
+    // (base and zoomed alike) carries the output pixel aspect and there is no
+    // letterboxed full-frame keyframe anywhere.
+    KeyframeEngine::Params p;
+    p.fill = true;
+    const double outAspect = 9.0 / 16.0;
+    const auto kfs = KeyframeEngine::generate(cur, clk, kVideo, dur, "9:16", p);
+
+    QVERIFY(!kfs.isEmpty());
+    // Strictly sorted.
+    for (int i = 1; i < kfs.size(); ++i)
+        QVERIFY(kfs.at(i).tMs > kfs.at(i - 1).tMs);
+    // First keyframe: t == 0 and an output-aspect crop (NOT the full frame).
+    QCOMPARE(kfs.first().tMs, qint64(0));
+    QVERIFY(!isFull(kfs.first().rect));
+    // No keyframe is ever the full frame; every rect carries the output aspect and
+    // stays inside [0,1].
+    for (const Keyframe &k : kfs) {
+        QVERIFY(!isFull(k.rect));
+        QVERIFY(k.rect.x() >= -1e-9);
+        QVERIFY(k.rect.y() >= -1e-9);
+        QVERIFY(k.rect.right() <= 1.0 + 1e-9);
+        QVERIFY(k.rect.bottom() <= 1.0 + 1e-9);
+        const double ratio = (k.rect.width() * kW) / (k.rect.height() * kH);
+        QVERIFY(std::fabs(ratio - outAspect) / outAspect < 1e-6);
+    }
+    // The cluster is still zoomed in (tighter than the base crop).
+    const QRectF base = KeyframeEngine::evaluate(kfs, 0);
+    const QRectF atCluster = KeyframeEngine::evaluate(kfs, 3300);
+    QVERIFY(atCluster.width() < base.width() - 1e-6);
+
+    // Determinism holds in fill mode too.
+    const auto kfs2 = KeyframeEngine::generate(cur, clk, kVideo, dur, "9:16", p);
+    QCOMPARE(kfs.size(), kfs2.size());
+    for (int i = 0; i < kfs.size(); ++i) {
+        QCOMPARE(kfs.at(i).tMs, kfs2.at(i).tMs);
+        QCOMPARE(kfs.at(i).rect, kfs2.at(i).rect);
+    }
 }
 
 void KeyframeEngineTest::evaluateContinuity()

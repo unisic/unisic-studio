@@ -73,6 +73,28 @@ Window {
     // added/removed, so a count change clears the selection.
     property int selectedKeyframe: -1
 
+    // Output pixel aspect (drives the on-canvas crop editor's aspect lock).
+    readonly property real srcAspect: (editorProject && editorProject.videoSize.height > 0)
+        ? editorProject.videoSize.width / editorProject.videoSize.height : (16 / 9)
+    readonly property real outputAspect: {
+        switch (editorProject && editorProject.style ? editorProject.style.aspect : "source") {
+        case "16:9": return 16 / 9
+        case "9:16": return 9 / 16
+        case "1:1":  return 1
+        default:     return srcAspect
+        }
+    }
+
+    // Selecting a keyframe seeks to its instant so the on-canvas crop editor shows
+    // the source frame at that moment (the composition is forced to full-frame).
+    onSelectedKeyframeChanged: {
+        if (selectedKeyframe >= 0 && editorProject && editorProject.zoom) {
+            var m = editorProject.zoom.keyframeAt(selectedKeyframe)
+            if (m && m.tMs !== undefined)
+                seekTo(m.tMs)
+        }
+    }
+
     // One seek entry point: with live playback it moves the player (whose
     // position feeds preview.sync); without it, it snaps the preview clock.
     function seekTo(ms) {
@@ -258,8 +280,12 @@ Window {
                         currentIndex: editorProject && editorProject.style
                                       ? Math.max(0, values.indexOf(editorProject.style.aspect)) : 0
                         onActivated: (i) => {
-                            if (editorProject && editorProject.style)
+                            if (editorProject && editorProject.style) {
                                 editorProject.style.aspect = values[i]
+                                // Re-frame the auto camera to the new aspect (crop-to-
+                                // fill follows the action); manual/locked kfs are kept.
+                                Studio.regenerateZoom(editorProject)
+                            }
                         }
                     }
                 }
@@ -311,6 +337,27 @@ Window {
                 // A webcam feed is present only when one was recorded, the module
                 // is available, and the style enables it.
                 webcamHasFeed: webcamLoader.item !== null
+                // While a keyframe is selected, show the whole source frame so the
+                // on-canvas crop editor maps 1:1 to the video card.
+                editRect: editorWindow.selectedKeyframe >= 0
+            }
+
+            // On-canvas zoom-target editor for the selected keyframe. Parented into
+            // the video slot (source-frame [0,1] coords, tracks the card); shown for
+            // timeline selection, '+ Zoom' and canvas-click alike. Editor-only —
+            // the export renderer instantiates CompositionRoot without it.
+            Loader {
+                parent: comp.videoSlot
+                anchors.fill: parent
+                z: 100
+                active: editorProject !== null && editorWindow.selectedKeyframe >= 0
+                sourceComponent: ZoomRectEditor {
+                    project: editorProject
+                    index: editorWindow.selectedKeyframe
+                    sourceAspect: editorWindow.srcAspect
+                    outputAspect: editorWindow.outputAspect
+                    onDeselectRequested: editorWindow.selectedKeyframe = -1
+                }
             }
 
             // Live video (only when QtMultimedia is present) parented into the
@@ -342,7 +389,10 @@ Window {
                 anchors.fill: parent
                 visible: !Studio.capVideoPlayback
                 source: editorWindow.posterSource
-                fillMode: Image.PreserveAspectFit
+                // Stretch to fill the video region (same rationale as PreviewVideo):
+                // the region carries the camera-viewport aspect and the composition
+                // crops from there, so a plain stretch is undistorted in both modes.
+                fillMode: Image.Stretch
                 Text {
                     anchors.centerIn: parent
                     visible: editorWindow.posterSource === ""
@@ -358,7 +408,10 @@ Window {
             MouseArea {
                 id: canvasClick
                 anchors.fill: parent
-                enabled: editorProject !== null
+                // Disabled while a keyframe is selected so the on-canvas crop editor
+                // (beneath, in the video slot) receives the drags instead. Deselect
+                // to add another zoom by clicking the canvas.
+                enabled: editorProject !== null && editorWindow.selectedKeyframe < 0
                 hoverEnabled: true
                 acceptedButtons: Qt.LeftButton
                 function normAt(mx, my) {

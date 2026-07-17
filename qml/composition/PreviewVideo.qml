@@ -31,6 +31,12 @@ Item {
     VideoOutput {
         id: out
         anchors.fill: parent
-        fillMode: VideoOutput.PreserveAspectFit
+        // Stretch to fill the composition's video region: the region carries the
+        // exact aspect of the camera viewport (source aspect in fit mode, output
+        // aspect in fill mode) and CompositionRoot's zoom transform crops from
+        // there, so a plain stretch is undistorted AND matches the export renderer
+        // (VideoFrameItem always fills its rect). PreserveAspectFit would letterbox
+        // inside the region in fill mode.
+        fillMode: VideoOutput.Stretch
     }
 }

@@ -30,6 +30,7 @@ QJsonObject KeyframeEngine::Params::toJson() const
         {"deadZoneFrac", deadZoneFrac},
         {"dwellMinMs", dwellMinMs},
         {"dwellSpeedFracPerSec", dwellSpeedFracPerSec},
+        {"fill", fill},
     };
 }
 
@@ -53,6 +54,7 @@ KeyframeEngine::Params KeyframeEngine::Params::fromJson(const QJsonObject &o)
     p.deadZoneFrac = d("deadZoneFrac", p.deadZoneFrac);
     p.dwellMinMs = i("dwellMinMs", p.dwellMinMs);
     p.dwellSpeedFracPerSec = d("dwellSpeedFracPerSec", p.dwellSpeedFracPerSec);
+    p.fill = o.contains("fill") ? o.value("fill").toBool(p.fill) : p.fill;
     return p;
 }
 
@@ -445,6 +447,112 @@ void emitSpan(const Span &s, const Cam &cam, const Geometry &g, const Params &p,
     mk(s.end + p.zoomOutMs, g.full(), p.zoomOutMs, p.zoomOutMs);
 }
 
+// ---- crop-to-fill (aspect fill) base camera --------------------------------
+// The base (non-zoomed) crop in fill mode is the largest centred OUTPUT-aspect
+// rect of the source (g.rectAt(center, 1)). It slow-pans to follow the cursor
+// with a LARGE dead zone, so the action stays framed without the twitchy motion
+// of the tight in-span camera. Sampled at span boundaries too.
+constexpr double kFillBaseDeadZone = 0.55;  // large → the base crop drifts slowly
+constexpr int kBasePanEaseMs = 700;         // gentle ease for a base pan
+
+struct BaseTrack {
+    QVector<qint64> t;
+    QVector<QPointF> c;
+
+    QPointF at(qint64 tt) const
+    {
+        if (t.isEmpty()) return QPointF(0.5, 0.5);
+        if (tt <= t.first()) return c.first();
+        if (tt >= t.last())  return c.last();
+        int lo = 0, hi = int(t.size()) - 1, i = 0;
+        while (lo <= hi) {
+            const int m = (lo + hi) / 2;
+            if (t.at(m) <= tt) { i = m; lo = m + 1; } else hi = m - 1;
+        }
+        if (i + 1 >= t.size()) return c.at(i);
+        const double sp = double(t.at(i + 1) - t.at(i));
+        const double f = sp > 0 ? double(tt - t.at(i)) / sp : 0.0;
+        return QPointF(c.at(i).x() + (c.at(i + 1).x() - c.at(i).x()) * f,
+                       c.at(i).y() + (c.at(i + 1).y() - c.at(i).y()) * f);
+    }
+};
+
+BaseTrack buildBaseTrack(const Cam &cam, const Geometry &g, qint64 durationMs)
+{
+    BaseTrack bt;
+    QPointF center = g.rectAt(cam.sample(0), 1.0).center();   // clamped fill-crop centre
+    bt.t.append(0);
+    bt.c.append(center);
+    for (qint64 t = kCameraTickMs; t <= durationMs; t += kCameraTickMs) {
+        const QRectF view = g.rectAt(center, 1.0);
+        const double hx = kFillBaseDeadZone * view.width() / 2.0;
+        const double hy = kFillBaseDeadZone * view.height() / 2.0;
+        const QPointF c = cam.sample(t);
+        const double dx = c.x() - center.x();
+        const double dy = c.y() - center.y();
+        if (dx > hx)       center.setX(center.x() + (dx - hx));
+        else if (dx < -hx) center.setX(center.x() + (dx + hx));
+        if (dy > hy)       center.setY(center.y() + (dy - hy));
+        else if (dy < -hy) center.setY(center.y() + (dy + hy));
+        center = g.rectAt(center, 1.0).center();   // re-clamp into the pan range
+        bt.t.append(t);
+        bt.c.append(center);
+    }
+    return bt;
+}
+
+// A fill-mode span: identical to emitSpan but the zoom-in eases FROM the base
+// crop and the zoom-out returns TO the (cursor-following) base crop rather than
+// the whole frame — so there is never a letterboxed full-frame section.
+void emitSpanFill(const Span &s, const Cam &cam, const Geometry &g, const Params &p,
+                  const BaseTrack &base, qint64 durationMs, QVector<Keyframe> &out)
+{
+    double z;
+    if (s.dwell)
+        z = std::max(1.0, p.zoomMin + (1.0 - p.zoomMin) * 0.25);
+    else
+        z = g.zoomForBbox(s.bbox, p);
+
+    QPointF center = s.bbox.center();
+    auto mk = [&](qint64 t, QRectF rect, int easeIn, int easeOut) {
+        Keyframe k;
+        k.tMs = std::clamp<qint64>(t, 0, durationMs);
+        k.rect = rect;
+        k.easeInMs = easeIn;
+        k.easeOutMs = easeOut;
+        k.source = ZoomTimeline::Auto;
+        k.locked = false;
+        out.append(k);
+    };
+
+    // Base framing at the start of the ramp so the zoom-in eases from the crop
+    // actually on screen (not a stale hold from an older base pan).
+    mk(s.start, g.rectAt(base.at(s.start), 1.0), kBasePanEaseMs, p.zoomOutMs);
+    // Zoom-in onto the cluster centroid.
+    mk(s.start + p.zoomInMs, g.rectAt(center, z), p.zoomInMs, p.zoomOutMs);
+
+    QPointF lastEmitted = center;
+    for (qint64 t = s.start + p.zoomInMs + kCameraTickMs; t < s.end; t += kCameraTickMs) {
+        const QRectF view = g.rectAt(center, z);
+        const double hx = p.deadZoneFrac * view.width() / 2.0;
+        const double hy = p.deadZoneFrac * view.height() / 2.0;
+        const QPointF c = cam.sample(t);
+        const double dx = c.x() - center.x();
+        const double dy = c.y() - center.y();
+        if (dx > hx)       center.setX(center.x() + (dx - hx));
+        else if (dx < -hx) center.setX(center.x() + (dx + hx));
+        if (dy > hy)       center.setY(center.y() + (dy - hy));
+        else if (dy < -hy) center.setY(center.y() + (dy + hy));
+        if (std::hypot(center.x() - lastEmitted.x(), center.y() - lastEmitted.y()) > kMoveEmitFrac) {
+            mk(t, g.rectAt(center, z), kPanEaseMs, p.zoomOutMs);
+            lastEmitted = center;
+        }
+    }
+
+    // Zoom-out back to the base crop (following the cursor at that instant).
+    mk(s.end + p.zoomOutMs, g.rectAt(base.at(s.end + p.zoomOutMs), 1.0), p.zoomOutMs, p.zoomOutMs);
+}
+
 } // namespace
 
 QVector<Keyframe> KeyframeEngine::generate(const CursorTrack &cursor,
@@ -481,21 +589,77 @@ QVector<Keyframe> KeyframeEngine::generate(const CursorTrack &cursor,
     for (const Keyframe &k : pinned)
         windows.append({k.tMs - k.easeInMs, k.tMs + k.easeOutMs});
 
-    // Assemble: always open at t=0 on the full frame, lay down each surviving
-    // span, and let each span's zoom-out leave us back on the full frame.
+    // Assemble. Fit mode opens on the full frame and returns to it between spans;
+    // fill mode opens on the (cursor-following) OUTPUT-aspect crop and returns to
+    // it, slow-panning through the idle gaps so there is never a letterbox section.
     QVector<Keyframe> out;
-    Keyframe first;
-    first.tMs = 0;
-    first.rect = g.full();
-    first.easeInMs = 0;
-    first.easeOutMs = 0;
-    first.source = ZoomTimeline::Auto;
-    out.append(first);
+    if (!params.fill) {
+        Keyframe first;
+        first.tMs = 0;
+        first.rect = g.full();
+        first.easeInMs = 0;
+        first.easeOutMs = 0;
+        first.source = ZoomTimeline::Auto;
+        out.append(first);
 
-    for (Span &s : spans) {
-        if (!windows.isEmpty() && !trimSpanAgainstPinned(s, windows, params))
-            continue;                        // dropped: overlaps a pinned kf
-        emitSpan(s, cam, g, params, durationMs, out);
+        for (Span &s : spans) {
+            if (!windows.isEmpty() && !trimSpanAgainstPinned(s, windows, params))
+                continue;                    // dropped: overlaps a pinned kf
+            emitSpan(s, cam, g, params, durationMs, out);
+        }
+    } else {
+        const BaseTrack base = buildBaseTrack(cam, g, durationMs);
+
+        Keyframe first;
+        first.tMs = 0;
+        first.rect = g.rectAt(base.at(0), 1.0);
+        first.easeInMs = 0;
+        first.easeOutMs = 0;
+        first.source = ZoomTimeline::Auto;
+        out.append(first);
+
+        // Surviving spans + their [start, end+zoomOut] active intervals (base pans
+        // are suppressed inside these — the span owns the framing there).
+        QVector<Span> keptSpans;
+        QVector<QPair<qint64, qint64>> active;
+        for (Span s : spans) {
+            if (!windows.isEmpty() && !trimSpanAgainstPinned(s, windows, params))
+                continue;
+            active.append({s.start, s.end + params.zoomOutMs});
+            keptSpans.append(s);
+        }
+        auto inActive = [&](qint64 t) {
+            for (const auto &iv : active)
+                if (t >= iv.first && t <= iv.second)
+                    return true;
+            return false;
+        };
+
+        // Idle base pans across the whole timeline (a slow follow), skipping the
+        // span-active regions so the zoom keyframes are not fought.
+        QPointF lastEmitted = base.c.value(0, QPointF(0.5, 0.5));
+        for (int i = 1; i < base.t.size(); ++i) {
+            const qint64 t = base.t.at(i);
+            if (inActive(t)) {
+                lastEmitted = base.c.at(i);  // resume measuring from where the span left the base
+                continue;
+            }
+            if (std::hypot(base.c.at(i).x() - lastEmitted.x(),
+                           base.c.at(i).y() - lastEmitted.y()) > kMoveEmitFrac) {
+                Keyframe k;
+                k.tMs = t;
+                k.rect = g.rectAt(base.c.at(i), 1.0);
+                k.easeInMs = kBasePanEaseMs;
+                k.easeOutMs = kBasePanEaseMs;
+                k.source = ZoomTimeline::Auto;
+                k.locked = false;
+                out.append(k);
+                lastEmitted = base.c.at(i);
+            }
+        }
+
+        for (const Span &s : keptSpans)
+            emitSpanFill(s, cam, g, params, base, durationMs, out);
     }
 
     // Drop any auto keyframe that still lands inside a pinned window (belt and
