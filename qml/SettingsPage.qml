@@ -15,9 +15,14 @@ Item {
     readonly property int cardWidth: Math.min(paneArea.width, 640)
     property int tab: 0
 
-    readonly property var tabNames: [qsTr("Recording"), qsTr("Storage"),
-                                     qsTr("Appearance"), qsTr("About")]
-    readonly property var tabIcons: ["media-record", "folder", "fill-color", "help-about"]
+    // The Developer tab is appended only in dev builds (UNISIC_DEV_BUILD →
+    // Studio.devBuild), same gating idiom as Unisic's Settings.
+    readonly property var tabNames: Studio.devBuild
+        ? [qsTr("Recording"), qsTr("Storage"), qsTr("Appearance"), qsTr("About"), qsTr("Developer")]
+        : [qsTr("Recording"), qsTr("Storage"), qsTr("Appearance"), qsTr("About")]
+    readonly property var tabIcons: Studio.devBuild
+        ? ["media-record", "folder", "fill-color", "help-about", "applications-development"]
+        : ["media-record", "folder", "fill-color", "help-about"]
 
     // All nine selectable themes, "system" first (it follows the desktop scheme).
     readonly property var themeIds: ["system", "unisic", "dark", "light",
@@ -577,6 +582,97 @@ Item {
                                     anchors.fill: parent
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: Qt.openUrlExternally("https://github.com/unisic")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- Developer (dev builds only, tab 4) ---
+        Loader {
+            anchors.fill: parent
+            active: Studio.devBuild && page.tab === 4
+            visible: active
+            sourceComponent: ScrollPane {
+                // Per-action buttons: every user-facing path gets a dev trigger.
+                UCard {
+                    width: page.cardWidth
+                    Column {
+                        width: parent.width
+                        spacing: Theme.spacingM
+                        SectionTitle { text: qsTr("Developer") }
+                        Text {
+                            width: parent.width
+                            wrapMode: Text.WordWrap
+                            text: qsTr("Exercise each path in isolation. Dev builds only.")
+                            color: Theme.textTertiary
+                            font.pixelSize: Theme.fontS
+                        }
+                        Flow {
+                            width: parent.width
+                            spacing: Theme.spacingS
+                            UButton { text: qsTr("Import test video"); variant: "tonal"; compact: true
+                                      onClicked: Studio.devImportTestVideo() }
+                            UButton { text: qsTr("Open recording HUD"); variant: "tonal"; compact: true
+                                      onClicked: Studio.devOpenRecordingHud() }
+                            UButton { text: qsTr("Run export test"); variant: "tonal"; compact: true
+                                      onClicked: Studio.devRunExportTest() }
+                            UButton { text: qsTr("Run auto-zoom test"); variant: "tonal"; compact: true
+                                      onClicked: Studio.devRunAutozoomTest() }
+                        }
+                    }
+                }
+
+                // Smoke test: run + live transcript (mirrors Unisic's dev pane).
+                UCard {
+                    width: page.cardWidth
+                    Column {
+                        width: parent.width
+                        spacing: Theme.spacingM
+                        SectionTitle { text: qsTr("Smoke test") }
+                        Row {
+                            width: parent.width
+                            spacing: Theme.spacingS
+                            UButton {
+                                text: qsTr("Run full smoke test (F8)")
+                                variant: "filled"
+                                compact: true
+                                enabled: !Studio.smokeTestRunning
+                                onClicked: Studio.runSmokeTest()
+                            }
+                            UButton {
+                                text: qsTr("Copy log")
+                                variant: "ghost"
+                                compact: true
+                                visible: Studio.smokeTestLog !== ""
+                                onClicked: Studio.copyToClipboard(Studio.smokeTestLog)
+                            }
+                        }
+                        Rectangle {
+                            width: parent.width
+                            height: 220
+                            visible: Studio.smokeTestLog !== ""
+                            radius: Theme.radiusM
+                            color: Theme.backgroundDeep
+                            border.width: 1
+                            border.color: Theme.divider
+                            Flickable {
+                                id: logFlick
+                                anchors.fill: parent
+                                anchors.margins: Theme.spacingM
+                                contentHeight: devLog.implicitHeight
+                                clip: true
+                                onContentHeightChanged: contentY = Math.max(0, contentHeight - height)
+                                Text {
+                                    id: devLog
+                                    width: logFlick.width - 2 * Theme.spacingM
+                                    text: Studio.smokeTestLog
+                                    color: Theme.textSecondary
+                                    font.family: "monospace"
+                                    font.pixelSize: Theme.fontS
+                                    wrapMode: Text.WrapAnywhere
                                 }
                             }
                         }

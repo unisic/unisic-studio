@@ -2,6 +2,8 @@
 #include <QObject>
 #include <QTimer>
 #include <QVariantList>
+#include <QVector>
+#include <functional>
 #include <qqmlregistration.h>
 #include "StudioSettings.h"
 // Full type (not a forward decl): the saveProject(StudioProject*) Q_INVOKABLEs
@@ -42,6 +44,11 @@ class StudioApp : public QObject
     // refreshInputPermission() — never at startup.
     Q_PROPERTY(int inputPermissionStatus READ inputPermissionStatus NOTIFY inputPermissionStatusChanged)
 
+    // Dev-build smoke test transcript + running flag (Developer pane / F8). A
+    // single running QString of PASS/FAIL/SKIP lines, live-updated per line.
+    Q_PROPERTY(QString smokeTestLog READ smokeTestLog NOTIFY smokeTestChanged)
+    Q_PROPERTY(bool smokeTestRunning READ smokeTestRunning NOTIFY smokeTestChanged)
+
 public:
     explicit StudioApp(QObject *parent = nullptr);
 
@@ -62,6 +69,8 @@ public:
     int recorderElapsed() const;
     int recorderCountdown() const { return m_recorderCountdown; }
     int inputPermissionStatus() const { return m_inputPermission; }
+    QString smokeTestLog() const { return m_smokeLog; }
+    bool smokeTestRunning() const { return m_smokeRunning; }
 
     // Wire the QML engine once at startup so per-window editor contexts can be
     // built. Called from main.cpp after the engine exists.
@@ -145,6 +154,17 @@ public:
     // `input` group). The UI wraps its own explanatory text around it.
     Q_INVOKABLE QString inputPermissionFixHint() const;
 
+    // --- developer aids (dev builds only; each is a no-op in a release build) ---
+    // Sequential smoke test across every load-bearing path (project roundtrip,
+    // engine generate, video probe, offscreen render + MP4 export, GIF pass,
+    // recorder arm+cancel). Reports PASS/FAIL/SKIP per step into smokeTestLog.
+    Q_INVOKABLE void runSmokeTest();
+    // Single-action dev buttons mirroring each user-facing path.
+    Q_INVOKABLE void devImportTestVideo();   // generate a testsrc + import it
+    Q_INVOKABLE void devOpenRecordingHud();  // show the HUD in its idle state
+    Q_INVOKABLE void devRunExportTest();     // export a generated clip to MP4
+    Q_INVOKABLE void devRunAutozoomTest();   // run the auto-zoom self-test
+
 signals:
     void recentProjectsChanged();
     void recorderStateChanged();
@@ -158,6 +178,9 @@ signals:
     // The project is owned by the editor window; do not delete it. Used by the
     // --import dev self-test in main.cpp.
     void imported(StudioProject *project);
+
+    // Smoke test transcript changed (a line appended, or running toggled).
+    void smokeTestChanged();
 
 private:
     bool doSave(StudioProject *project, const QString &path);
@@ -173,6 +196,15 @@ private:
     void onRecorderArmed();                // start the countdown (or commit now)
     void stopCountdown();
 
+    // Smoke-test machinery (dev builds). smokeNext() drives the step queue;
+    // smokeLog() appends a line and emits. devMakeTestVideo() writes a short
+    // testsrc clip into m_smokeDir and returns its path (empty on failure).
+    // runSmokeExport() is a shared step body for the MP4/GIF export checks.
+    void smokeLog(const QString &line);
+    void smokeNext();
+    QString devMakeTestVideo();
+    void runSmokeExport(const QString &format, const QString &label);
+
     // Parent-owned (constructed with `this`): die with the facade, no leaks.
     StudioSettings *m_settings;
     RecentProjects *m_recent;
@@ -186,4 +218,12 @@ private:
     QTimer m_countdownTimer;
     int m_recorderCountdown = 0;
     int m_inputPermission = -1;            // -1 = not yet probed
+
+    // Smoke test (dev builds). One run at a time; a QString transcript plus a
+    // lambda step queue (mirrors Unisic's AppContext::runSmokeTest).
+    QString m_smokeLog;
+    bool m_smokeRunning = false;
+    QVector<std::function<void()>> m_smokeSteps;
+    int m_smokeIdx = 0;
+    QString m_smokeDir;                    // temp dir for this run's fixtures/outputs
 };

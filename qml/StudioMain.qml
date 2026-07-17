@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Window
+import QtQuick.Controls
 import QtQuick.Effects
 import Unisic.Kit
 import UnisicStudio
@@ -291,6 +292,14 @@ Window {
             }
         }
     }
+
+    // Dev-only smoke test: F8 opens the results dialog and runs the sequence.
+    Shortcut {
+        sequence: "F8"
+        enabled: Studio.devBuild
+        onActivated: smokeDialog.run()
+    }
+    SmokeTestDialog { id: smokeDialog }
 
     // Transient toast for Studio.notified (import/save feedback).
     Rectangle {

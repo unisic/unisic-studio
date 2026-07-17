@@ -140,6 +140,7 @@ qt_add_qml_module(unisic-studio
         qml/InspectorPanel.qml
         qml/ExportDialog.qml
         qml/Timeline.qml
+        qml/SmokeTestDialog.qml
         qml/composition/CompositionRoot.qml
         qml/composition/CursorOverlay.qml
         qml/composition/PreviewVideo.qml

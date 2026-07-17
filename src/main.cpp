@@ -19,6 +19,7 @@
 #include <QLocalSocket>
 #include <QTranslator>
 #include <QPointer>
+#include <QSharedPointer>
 #include <QSocketNotifier>
 #include <QTimer>
 #include <QDir>
@@ -371,6 +372,24 @@ int main(int argc, char *argv[])
         }
         if (args.contains(QStringLiteral("--autozoom-test"))) {
             QTimer::singleShot(0, &studio, [&studio] { AutozoomSelfTest::run(&studio); });
+        }
+        // Dev aid: run the F8 smoke test headlessly, print the transcript, and
+        // exit 0 (no FAIL lines) / 4 (a step failed). Runs on a live session
+        // (the offscreen render steps need the GL RHI).
+        if (args.contains(QStringLiteral("--smoke-test"))) {
+            auto reported = QSharedPointer<bool>::create(false);
+            QObject::connect(&studio, &StudioApp::smokeTestChanged, &app, [&studio, reported] {
+                if (studio.smokeTestRunning() || *reported)
+                    return;
+                *reported = true;
+                fprintf(stderr, "%s", qPrintable(studio.smokeTestLog()));
+                fflush(stderr);
+                // "FAILURES PRESENT" is only in the summary when a step failed
+                // (the count line reads "0 FAIL" on success — don't match that).
+                const bool ok = !studio.smokeTestLog().contains(QStringLiteral("FAILURES PRESENT"));
+                QCoreApplication::exit(ok ? 0 : 4);
+            });
+            QTimer::singleShot(0, &studio, [&studio] { studio.runSmokeTest(); });
         }
         if (args.contains(QStringLiteral("--hud-test"))) {
             QTimer::singleShot(0, &app, [&studio] {

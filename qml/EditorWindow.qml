@@ -450,6 +450,15 @@ Window {
         id: exportDialog
     }
 
+    // Dev-only smoke test (also bound in the main window) — reachable from the
+    // editor where the export path is exercised.
+    Shortcut {
+        sequence: "F8"
+        enabled: Studio.devBuild
+        onActivated: smokeDialog.run()
+    }
+    SmokeTestDialog { id: smokeDialog }
+
     // Themed confirm on closing a dirty project (kit dialog, not QMessageBox).
     UConfirmDialog {
         id: discardDlg
