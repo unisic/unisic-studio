@@ -91,7 +91,11 @@ RenderPipeline::~RenderPipeline()
     }
     if (m_encoder)
         FfmpegUtil::stopProcess(m_encoder);
+    if (m_converter)
+        FfmpegUtil::stopProcess(m_converter);
     teardownScene();
+    if (m_active)
+        deleteGifTemps();
     // Torn down while an export was still running — the app was quit mid-export,
     // which routes qApp→~ExportController→~RenderPipeline WITHOUT a cancel()/fail().
     // The file on disk is a truncated partial; remove it so a broken clip can't
@@ -251,29 +255,47 @@ void RenderPipeline::startEncoder()
     const QString dur = QString::number(qMax<qint64>(0, m_s.durMs) / 1000.0, 'f', 6);
 
     QStringList args;
+    // Common raw-pipe input header (the composed BGRA frames from the renderer).
     args << QStringLiteral("-y") << QStringLiteral("-f") << QStringLiteral("rawvideo")
          << QStringLiteral("-pix_fmt") << QStringLiteral("bgra") << QStringLiteral("-video_size")
          << QStringLiteral("%1x%2").arg(m_s.outW).arg(m_s.outH) << QStringLiteral("-framerate")
-         << QString::number(m_s.fps) << QStringLiteral("-i") << QStringLiteral("pipe:0")
-         // Audio (and A/V trim) from the master; ? makes audio optional.
-         << QStringLiteral("-ss") << ss << QStringLiteral("-t") << dur << QStringLiteral("-i")
-         << m_s.master << QStringLiteral("-map") << QStringLiteral("0:v:0") << QStringLiteral("-map")
-         << QStringLiteral("1:a:0?");
-    args += videoCodecArgs(m_s.format, m_s.crf, m_s.preferHardware);
-    if (m_s.format == QLatin1String("webm"))
-        args << QStringLiteral("-c:a") << QStringLiteral("libopus") << QStringLiteral("-b:a")
-             << QStringLiteral("128k");
-    else
-        args << QStringLiteral("-c:a") << QStringLiteral("aac") << QStringLiteral("-b:a")
-             << QStringLiteral("192k");
-    args << QStringLiteral("-shortest") << m_s.outputPath;
+         << QString::number(m_s.fps) << QStringLiteral("-i") << QStringLiteral("pipe:0");
+
+    if (isGif()) {
+        // GIF has no audio and cannot be piped in one shot (palettegen must see
+        // every frame first), so the encoder only writes a LOSSLESS intermediate
+        // .mkv here; the two palette passes run once it finishes. ffv1/bgr0 is a
+        // lossless reorder of the BGRA pipe (gif carries no alpha), keeping the
+        // colours exact for palettegen. Temp beside the output; cleaned on every
+        // exit path (finish/fail/cancel/dtor).
+        m_gifIntermediate = m_s.outputPath + QStringLiteral(".tmp.mkv");
+        m_gifPalette = m_s.outputPath + QStringLiteral(".palette.png");
+        args << QStringLiteral("-an") << QStringLiteral("-c:v") << QStringLiteral("ffv1")
+             << QStringLiteral("-pix_fmt") << QStringLiteral("bgr0") << m_gifIntermediate;
+    } else {
+        // Audio (and A/V trim) from the master; ? makes audio optional.
+        args << QStringLiteral("-ss") << ss << QStringLiteral("-t") << dur << QStringLiteral("-i")
+             << m_s.master << QStringLiteral("-map") << QStringLiteral("0:v:0") << QStringLiteral("-map")
+             << QStringLiteral("1:a:0?");
+        args += videoCodecArgs(m_s.format, m_s.crf, m_s.preferHardware);
+        if (m_s.format == QLatin1String("webm"))
+            args << QStringLiteral("-c:a") << QStringLiteral("libopus") << QStringLiteral("-b:a")
+                 << QStringLiteral("128k");
+        else
+            args << QStringLiteral("-c:a") << QStringLiteral("aac") << QStringLiteral("-b:a")
+                 << QStringLiteral("192k");
+        args << QStringLiteral("-shortest") << m_s.outputPath;
+    }
 
     m_encoder = new QProcess;
     connect(m_encoder, &QProcess::finished, this, [this](int code, QProcess::ExitStatus) {
         if (!m_active || m_canceled)
             return;
         if (code == 0 && m_finishing) {
-            finish();
+            if (isGif())
+                startGifPalettegen(); // intermediate is written; convert to gif
+            else
+                finish();
         } else {
             QString msg = QString::fromLocal8Bit(m_encoder->readAllStandardError()).trimmed();
             if (msg.isEmpty())
@@ -375,6 +397,82 @@ void RenderPipeline::onDecodeFinished(int frameCount)
         finish();
 }
 
+void RenderPipeline::startGifPalettegen()
+{
+    // Pass 1: read the lossless intermediate, write an optimal 256-colour palette
+    // PNG. stats_mode scales with quality (see FfmpegUtil::gifPaletteGenFilter).
+    const QString exe = FrameDecoder::ffmpegPath();
+    QStringList args;
+    args << QStringLiteral("-y") << QStringLiteral("-nostats") << QStringLiteral("-loglevel")
+         << QStringLiteral("error") << QStringLiteral("-i") << m_gifIntermediate
+         << QStringLiteral("-vf") << FfmpegUtil::gifPaletteGenFilter(m_s.gifQuality) << m_gifPalette;
+
+    m_converter = new QProcess;
+    connect(m_converter, &QProcess::finished, this, [this](int code, QProcess::ExitStatus) {
+        if (!m_active || m_canceled || !m_converter)
+            return;
+        QProcess *conv = m_converter;
+        m_converter = nullptr;
+        conv->deleteLater();
+        if (code == 0)
+            startGifPaletteuse();
+        else {
+            QString msg = QString::fromLocal8Bit(conv->readAllStandardError()).trimmed();
+            fail(msg.isEmpty() ? tr("GIF palette generation failed (code %1).").arg(code) : msg);
+        }
+    });
+    connect(m_converter, &QProcess::errorOccurred, this, [this](QProcess::ProcessError) {
+        if (!m_active || m_canceled || !m_converter)
+            return;
+        fail(tr("Could not run the GIF converter: %1").arg(m_converter->errorString()));
+    });
+    m_converter->start(exe, args, QIODevice::ReadOnly);
+}
+
+void RenderPipeline::startGifPaletteuse()
+{
+    // Pass 2: map the intermediate through the palette to the final .gif. dither
+    // scales with quality (FfmpegUtil::gifPaletteUseFilter); ffmpeg defaults the
+    // gif muxer to infinite looping (-loop 0), which is what we want.
+    const QString exe = FrameDecoder::ffmpegPath();
+    const QString lavfi =
+        QStringLiteral("[0:v][1:v]%1").arg(FfmpegUtil::gifPaletteUseFilter(m_s.gifQuality));
+    QStringList args;
+    args << QStringLiteral("-y") << QStringLiteral("-nostats") << QStringLiteral("-loglevel")
+         << QStringLiteral("error") << QStringLiteral("-i") << m_gifIntermediate
+         << QStringLiteral("-i") << m_gifPalette << QStringLiteral("-lavfi") << lavfi
+         << m_s.outputPath;
+
+    m_converter = new QProcess;
+    connect(m_converter, &QProcess::finished, this, [this](int code, QProcess::ExitStatus) {
+        if (!m_active || m_canceled || !m_converter)
+            return;
+        QProcess *conv = m_converter;
+        m_converter = nullptr;
+        conv->deleteLater();
+        if (code == 0)
+            finish(); // deletes the intermediate + palette via deleteGifTemps()
+        else {
+            QString msg = QString::fromLocal8Bit(conv->readAllStandardError()).trimmed();
+            fail(msg.isEmpty() ? tr("GIF rendering failed (code %1).").arg(code) : msg);
+        }
+    });
+    connect(m_converter, &QProcess::errorOccurred, this, [this](QProcess::ProcessError) {
+        if (!m_active || m_canceled || !m_converter)
+            return;
+        fail(tr("Could not run the GIF converter: %1").arg(m_converter->errorString()));
+    });
+    m_converter->start(exe, args, QIODevice::ReadOnly);
+}
+
+void RenderPipeline::deleteGifTemps()
+{
+    if (!m_gifIntermediate.isEmpty() && QFile::exists(m_gifIntermediate))
+        QFile::remove(m_gifIntermediate);
+    if (!m_gifPalette.isEmpty() && QFile::exists(m_gifPalette))
+        QFile::remove(m_gifPalette);
+}
+
 void RenderPipeline::finish()
 {
     if (!m_active)
@@ -390,7 +488,10 @@ void RenderPipeline::finish()
     }
     if (m_encoder)
         FfmpegUtil::stopProcess(m_encoder);
+    if (m_converter)
+        FfmpegUtil::stopProcess(m_converter);
     teardownScene();
+    deleteGifTemps();
     emit finished();
 }
 
@@ -408,8 +509,11 @@ void RenderPipeline::fail(const QString &message)
     }
     if (m_encoder)
         FfmpegUtil::stopProcess(m_encoder);
+    if (m_converter)
+        FfmpegUtil::stopProcess(m_converter);
     teardownScene();
     deletePartialOutput();
+    deleteGifTemps();
     emit failed(message);
 }
 
@@ -428,8 +532,11 @@ void RenderPipeline::cancel()
     }
     if (m_encoder)
         FfmpegUtil::stopProcess(m_encoder);
+    if (m_converter)
+        FfmpegUtil::stopProcess(m_converter);
     teardownScene();
     deletePartialOutput();
+    deleteGifTemps();
 }
 
 void RenderPipeline::deletePartialOutput()

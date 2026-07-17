@@ -15,7 +15,11 @@ ExportController::~ExportController() = default;
 
 QString ExportController::extension() const
 {
-    return m_format == QLatin1String("webm") ? QStringLiteral("webm") : QStringLiteral("mp4");
+    if (m_format == QLatin1String("webm"))
+        return QStringLiteral("webm");
+    if (m_format == QLatin1String("gif"))
+        return QStringLiteral("gif");
+    return QStringLiteral("mp4");
 }
 
 void ExportController::setFormat(const QString &v)
@@ -159,6 +163,10 @@ void ExportController::start(StudioProject *project)
         fps = 30.0;
     else if (m_fpsMode == QLatin1String("60"))
         fps = 60.0;
+    // GIF: cap at 30 fps regardless of the chosen mode (60 fps gifs bloat wildly
+    // for no perceptible gain and many viewers clamp them anyway).
+    if (m_format == QLatin1String("gif"))
+        fps = qMin(fps, 30.0);
 
     const qint64 trimIn = qMax<qint64>(0, project->trimInMs());
     const qint64 effOut =
@@ -179,6 +187,8 @@ void ExportController::start(StudioProject *project)
     s.outH = outH;
     s.format = m_format;
     s.crf = crf;
+    // GIF palette quality 0..2 from the same 0..100 slider (fast/small → best).
+    s.gifQuality = m_quality < 34 ? 0 : (m_quality < 67 ? 1 : 2);
     s.preferHardware = false; // M1: software x264/vp9 by default (robust, tested)
     s.outputPath = m_outputPath;
     // Camera + cursor overlay: snapshot the live models so the offscreen render

@@ -49,7 +49,7 @@ Popup {
     ExportController { id: exporter }
 
     // Index maps between the model's string enums and the combo rows.
-    readonly property var _formats: ["mp4", "webm"]
+    readonly property var _formats: ["mp4", "webm", "gif"]
     readonly property var _resolutions: ["source", "1080p", "720p", "custom"]
     readonly property var _fpsModes: ["source", "30", "60"]
 
@@ -92,7 +92,7 @@ Popup {
                 label: qsTr("Format")
                 UComboBox {
                     width: parent.width
-                    model: [qsTr("MP4 (H.264)"), qsTr("WebM (VP9)")]
+                    model: [qsTr("MP4 (H.264)"), qsTr("WebM (VP9)"), qsTr("GIF")]
                     currentIndex: Math.max(0, root._formats.indexOf(exporter.format))
                     onActivated: (i) => exporter.format = root._formats[i]
                 }
@@ -155,6 +155,16 @@ Popup {
                     value: exporter.quality
                     onMoved: (v) => exporter.quality = Math.round(v)
                 }
+            }
+
+            // GIF is palette-based: no audio, capped at 30 fps.
+            Text {
+                width: parent.width
+                visible: exporter.format === "gif"
+                text: qsTr("GIF has no audio and is capped at 30 fps.")
+                color: Theme.textTertiary
+                font.pixelSize: Theme.fontS
+                wrapMode: Text.WordWrap
             }
 
             Field {

@@ -72,8 +72,9 @@ public:
         double fps = 30.0;     // export frame rate
         int outW = 1920;       // export width  (even-guarded by start())
         int outH = 1080;       // export height (even-guarded by start())
-        QString format = QStringLiteral("mp4"); // "mp4" | "webm"
+        QString format = QStringLiteral("mp4"); // "mp4" | "webm" | "gif"
         int crf = 22;          // quality (lower = better)
+        int gifQuality = 1;    // gif palette quality 0..2 (fast/small → best); unused off gif
         bool preferHardware = false;
         QString outputPath;
         // --- camera + cursor overlay (M3) ---
@@ -101,12 +102,21 @@ signals:
     void failed(const QString &message);
 
 private:
+    bool isGif() const { return m_s.format == QLatin1String("gif"); }
     bool buildScene(QString *error);   // GL context + render control + CompositionRoot
     void startEncoder();
     void onFrame(int index, const QImage &frame);
     void onDecodeFinished(int frameCount);
     void renderOneFrameGeometry();     // one throwaway pass to settle QML layout
     void writeFrameToEncoder(const QImage &grabbed);
+    // GIF is a true two-pass palette conversion (mirrors Unisic's GifRecorder):
+    // the encoder writes a LOSSLESS intermediate .mkv from the raw pipe, then
+    // pass 1 (palettegen) writes a palette PNG and pass 2 (paletteuse) renders
+    // the .gif. A single split-graph command buffers every frame in RAM, so the
+    // temp-file route is deliberate.
+    void startGifPalettegen();         // pass 1: intermediate → palette PNG
+    void startGifPaletteuse();         // pass 2: intermediate + palette → gif
+    void deleteGifTemps();
     void finish();                     // clean success finalize
     void fail(const QString &message);
     void teardownScene();
@@ -135,5 +145,8 @@ private:
 
     FrameDecoder *m_decoder = nullptr;  // child of this
     QProcess *m_encoder = nullptr;      // reaped via FfmpegUtil::stopProcess
+    QProcess *m_converter = nullptr;    // gif palette pass (reaped via FfmpegUtil::stopProcess)
+    QString m_gifIntermediate;          // lossless .mkv the encoder writes for gif
+    QString m_gifPalette;               // palette .png from pass 1
     QByteArray m_rowBuf;                // reused row-pack scratch (padded-stride path only)
 };
