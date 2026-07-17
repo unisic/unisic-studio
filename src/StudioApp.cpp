@@ -455,8 +455,7 @@ void StudioApp::generateZoom(StudioProject *project, bool onlyIfEmpty)
     const double genMs = timer.nsecsElapsed() / 1.0e6;
 
     zoom->clearAuto();                            // drop old autos, keep Manual + locked
-    for (const auto &kf : kfs)
-        zoom->addKeyframe(kf);
+    zoom->addKeyframes(kfs);                       // bulk sorted insert — one changed()
     zoom->setAutoParams(params.toJson());         // persist the params used
 
     qInfo("autozoom: %lld keyframes from %lld cursor samples in %.2f ms",

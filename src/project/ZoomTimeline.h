@@ -52,6 +52,14 @@ public:
     // Sorted insert by tMs; returns the row it landed at. Ties keep insertion
     // order (inserted after equal-tMs keyframes already present).
     int addKeyframe(const Keyframe &kf);
+
+    // Bulk sorted insert: adds every keyframe under a SINGLE model reset and emits
+    // countChanged()/changed() ONCE, so a live PreviewController recomputes once
+    // instead of once per keyframe (the regenerate binding storm). Tie ordering
+    // matches per-item addKeyframe(): existing rows keep their place, appended rows
+    // follow in argument order.
+    void addKeyframes(const QList<Keyframe> &kfs);
+
     Q_INVOKABLE void removeAt(int index);
 
     // Retime a keyframe and re-sort. Returns its new row (== index when the

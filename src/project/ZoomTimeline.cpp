@@ -79,6 +79,23 @@ int ZoomTimeline::addKeyframe(const Keyframe &kf)
     return row;
 }
 
+void ZoomTimeline::addKeyframes(const QList<Keyframe> &kfs)
+{
+    if (kfs.isEmpty())
+        return;
+    beginResetModel();
+    m_keyframes.append(kfs);
+    // The backing list must stay sorted by tMs. stable_sort keeps equal-tMs rows in
+    // their prior relative order — existing keyframes ahead of the freshly appended
+    // ones — so ties land exactly where a per-item addKeyframe() (upper_bound
+    // insert) would have put them.
+    std::stable_sort(m_keyframes.begin(), m_keyframes.end(),
+                     [](const Keyframe &a, const Keyframe &b) { return a.tMs < b.tMs; });
+    endResetModel();
+    emit countChanged();
+    emit changed();
+}
+
 void ZoomTimeline::removeAt(int index)
 {
     if (index < 0 || index >= m_keyframes.size())
