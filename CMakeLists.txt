@@ -25,6 +25,15 @@ endif()
 # git submodule; kit changes go through the unisic-kit repo, never edited here.
 add_subdirectory(external/unisic-kit)
 
+# Click capture (libinput/libudev) is OPTIONAL, guarded exactly like the kit's
+# HAVE_PIPEWIRE: without the -devel packages the build still succeeds (a warning
+# is printed) and InputPermission reports NotBuilt / ClickCapture stays inert.
+find_package(PkgConfig)
+if(PkgConfig_FOUND)
+    pkg_check_modules(LIBINPUT IMPORTED_TARGET libinput)
+    pkg_check_modules(LIBUDEV IMPORTED_TARGET libudev)
+endif()
+
 qt_add_executable(unisic-studio
     src/main.cpp
     src/StudioApp.h src/StudioApp.cpp
@@ -45,6 +54,17 @@ qt_add_executable(unisic-studio
     src/project/ZoomTimeline.h src/project/ZoomTimeline.cpp
     src/project/StyleModel.h src/project/StyleModel.cpp
     src/project/StudioProject.h src/project/StudioProject.cpp
+    # Recording engine (M2). StudioRecorder orchestrates portal + PipeWireGrabber
+    # + fixed-FPS sampler + ffmpeg; RecordingAssembler builds the tracks/sidecar in
+    # its own TU (the kit and project CursorSample structs collide in one). Click
+    # capture (ClickCapture/InputPermission) compiles unconditionally with the
+    # libinput code fully behind #ifdef HAVE_LIBINPUT — the #else branch is the
+    # NotBuilt/inert stub, so no separate stub TU is needed.
+    src/capture/RecorderMath.h
+    src/capture/InputPermission.h src/capture/InputPermission.cpp
+    src/capture/ClickCapture.h src/capture/ClickCapture.cpp
+    src/capture/RecordingAssembler.h src/capture/RecordingAssembler.cpp
+    src/capture/StudioRecorder.h src/capture/StudioRecorder.cpp
     # Offscreen render + export pipeline (M1 final step). VideoFrameItem and
     # ExportController are QML_ELEMENT types in the UnisicStudio module; the rest
     # is plain C++ the controller wires up. ffmpeg is shelled out, never linked.
@@ -103,7 +123,18 @@ qt_add_qml_module(unisic-studio
 )
 
 # qmltyperegistration includes QML_ELEMENT headers by basename.
-target_include_directories(unisic-studio PRIVATE src src/project src/media src/render)
+target_include_directories(unisic-studio PRIVATE src src/project src/media src/render src/capture)
+
+# Optional click capture: link libinput/libudev and flip HAVE_LIBINPUT only when
+# both were found. The capture sources always compile; this just enables the real
+# code path (else InputPermission::probe() returns NotBuilt).
+if(LIBINPUT_FOUND AND LIBUDEV_FOUND)
+    target_link_libraries(unisic-studio PRIVATE PkgConfig::LIBINPUT PkgConfig::LIBUDEV)
+    target_compile_definitions(unisic-studio PRIVATE HAVE_LIBINPUT)
+    message(STATUS "unisic-studio: click capture enabled (HAVE_LIBINPUT=ON)")
+else()
+    message(WARNING "libinput/libudev not found — click capture (ClickCapture) will be unavailable")
+endif()
 target_link_libraries(unisic-studio PRIVATE
     Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Quick Qt6::Qml Qt6::QuickControls2
     Qt6::DBus Qt6::Concurrent
@@ -191,6 +222,17 @@ if(BUILD_TESTING)
     target_link_libraries(studio_project_test PRIVATE Qt6::Core Qt6::Gui Qt6::Test)
     target_include_directories(studio_project_test PRIVATE src/project)
     add_test(NAME studio_project_test COMMAND studio_project_test)
+
+    # Recorder time-math (pure): mono-ns→video-ms mapping, pause-range conversion +
+    # merging, and click-position resolution via CursorTrack::sample around excised
+    # ranges. RecorderMath is header-only; the click test needs the two track .cpp.
+    qt_add_executable(studio_recorder_math_test
+        tests/RecorderMathTest.cpp
+        src/project/CursorTrack.h src/project/CursorTrack.cpp
+        src/project/ClickTrack.h src/project/ClickTrack.cpp)
+    target_link_libraries(studio_recorder_math_test PRIVATE Qt6::Core Qt6::Gui Qt6::Test)
+    target_include_directories(studio_recorder_math_test PRIVATE src/project src/capture)
+    add_test(NAME studio_recorder_math_test COMMAND studio_recorder_math_test)
 endif()
 
 install(TARGETS unisic-studio RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
