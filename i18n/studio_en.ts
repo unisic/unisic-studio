@@ -9,77 +9,77 @@
         <translation>Untitled</translation>
     </message>
     <message>
-        <location filename="../qml/EditorWindow.qml" line="189"/>
+        <location filename="../qml/EditorWindow.qml" line="211"/>
         <source>Minimize</source>
         <translation>Minimize</translation>
     </message>
     <message>
-        <location filename="../qml/EditorWindow.qml" line="193"/>
+        <location filename="../qml/EditorWindow.qml" line="215"/>
         <source>Maximize</source>
         <translation>Maximize</translation>
     </message>
     <message>
-        <location filename="../qml/EditorWindow.qml" line="199"/>
+        <location filename="../qml/EditorWindow.qml" line="221"/>
         <source>Close</source>
         <translation>Close</translation>
     </message>
     <message>
-        <location filename="../qml/EditorWindow.qml" line="248"/>
+        <location filename="../qml/EditorWindow.qml" line="270"/>
         <source>Aspect</source>
         <translation>Aspect</translation>
     </message>
     <message>
-        <location filename="../qml/EditorWindow.qml" line="257"/>
+        <location filename="../qml/EditorWindow.qml" line="279"/>
         <source>Source</source>
         <translation>Source</translation>
     </message>
     <message>
-        <location filename="../qml/EditorWindow.qml" line="269"/>
+        <location filename="../qml/EditorWindow.qml" line="295"/>
         <source>Save (Ctrl+S)</source>
         <translation>Save (Ctrl+S)</translation>
     </message>
     <message>
-        <location filename="../qml/EditorWindow.qml" line="278"/>
+        <location filename="../qml/EditorWindow.qml" line="304"/>
         <source>Export</source>
         <translation>Export</translation>
     </message>
     <message>
-        <location filename="../qml/EditorWindow.qml" line="349"/>
+        <location filename="../qml/EditorWindow.qml" line="399"/>
         <source>Preview unavailable</source>
         <translation>Preview unavailable</translation>
     </message>
     <message>
-        <location filename="../qml/EditorWindow.qml" line="398"/>
+        <location filename="../qml/EditorWindow.qml" line="451"/>
         <source>Click: add zoom · Double-click: reset</source>
         <translation>Click: add zoom · Double-click: reset</translation>
     </message>
     <message>
-        <location filename="../qml/EditorWindow.qml" line="439"/>
+        <location filename="../qml/EditorWindow.qml" line="492"/>
         <source>Play / pause</source>
         <translation>Play / pause</translation>
     </message>
     <message>
-        <location filename="../qml/EditorWindow.qml" line="466"/>
+        <location filename="../qml/EditorWindow.qml" line="519"/>
         <source>clip %1</source>
         <translation>clip %1</translation>
     </message>
     <message>
-        <location filename="../qml/EditorWindow.qml" line="492"/>
+        <location filename="../qml/EditorWindow.qml" line="545"/>
         <source>Discard unsaved changes?</source>
         <translation>Discard unsaved changes?</translation>
     </message>
     <message>
-        <location filename="../qml/EditorWindow.qml" line="493"/>
+        <location filename="../qml/EditorWindow.qml" line="546"/>
         <source>Your changes will be lost. Save first with Ctrl+S.</source>
         <translation>Your changes will be lost. Save first with Ctrl+S.</translation>
     </message>
     <message>
-        <location filename="../qml/EditorWindow.qml" line="494"/>
+        <location filename="../qml/EditorWindow.qml" line="547"/>
         <source>Discard</source>
         <translation>Discard</translation>
     </message>
     <message>
-        <location filename="../qml/EditorWindow.qml" line="495"/>
+        <location filename="../qml/EditorWindow.qml" line="548"/>
         <source>Keep editing</source>
         <translation>Keep editing</translation>
     </message>
@@ -259,7 +259,8 @@
     <name>InspectorPanel</name>
     <message>
         <location filename="../qml/InspectorPanel.qml" line="153"/>
-        <location filename="../qml/InspectorPanel.qml" line="493"/>
+        <location filename="../qml/InspectorPanel.qml" line="473"/>
+        <location filename="../qml/InspectorPanel.qml" line="556"/>
         <source>Style</source>
         <translation>Style</translation>
     </message>
@@ -280,7 +281,7 @@
     </message>
     <message>
         <location filename="../qml/InspectorPanel.qml" line="202"/>
-        <location filename="../qml/InspectorPanel.qml" line="557"/>
+        <location filename="../qml/InspectorPanel.qml" line="620"/>
         <source>Position</source>
         <translation>Position</translation>
     </message>
@@ -385,97 +386,144 @@
         <translation>Corner radius</translation>
     </message>
     <message>
-        <location filename="../qml/InspectorPanel.qml" line="454"/>
+        <location filename="../qml/InspectorPanel.qml" line="447"/>
+        <source>Fill mode</source>
+        <translation>Fill mode</translation>
+    </message>
+    <message>
+        <location filename="../qml/InspectorPanel.qml" line="448"/>
+        <source>Crop to fill</source>
+        <translation>Crop to fill</translation>
+    </message>
+    <message>
+        <location filename="../qml/InspectorPanel.qml" line="448"/>
+        <source>Fit (letterbox)</source>
+        <translation>Fit (letterbox)</translation>
+    </message>
+    <message>
+        <location filename="../qml/InspectorPanel.qml" line="467"/>
+        <source>Cursor</source>
+        <translation>Cursor</translation>
+    </message>
+    <message>
+        <location filename="../qml/InspectorPanel.qml" line="474"/>
+        <source>Pointer</source>
+        <translation>Pointer</translation>
+    </message>
+    <message>
+        <location filename="../qml/InspectorPanel.qml" line="474"/>
+        <source>System</source>
+        <translation>System</translation>
+    </message>
+    <message>
+        <location filename="../qml/InspectorPanel.qml" line="474"/>
+        <source>Dot</source>
+        <translation>Dot</translation>
+    </message>
+    <message>
+        <location filename="../qml/InspectorPanel.qml" line="488"/>
+        <source>Click ripple</source>
+        <translation>Click ripple</translation>
+    </message>
+    <message>
+        <location filename="../qml/InspectorPanel.qml" line="503"/>
+        <source>Ripple color</source>
+        <translation>Ripple color</translation>
+    </message>
+    <message>
+        <location filename="../qml/InspectorPanel.qml" line="517"/>
         <source>Shadow</source>
         <translation>Shadow</translation>
     </message>
     <message>
-        <location filename="../qml/InspectorPanel.qml" line="460"/>
+        <location filename="../qml/InspectorPanel.qml" line="523"/>
         <source>Blur</source>
         <translation>Blur</translation>
     </message>
     <message>
-        <location filename="../qml/InspectorPanel.qml" line="466"/>
+        <location filename="../qml/InspectorPanel.qml" line="529"/>
         <source>Opacity</source>
         <translation>Opacity</translation>
     </message>
     <message>
-        <location filename="../qml/InspectorPanel.qml" line="472"/>
+        <location filename="../qml/InspectorPanel.qml" line="535"/>
         <source>Offset Y</source>
         <translation>Offset Y</translation>
     </message>
     <message>
-        <location filename="../qml/InspectorPanel.qml" line="487"/>
+        <location filename="../qml/InspectorPanel.qml" line="550"/>
         <source>Frame</source>
         <translation>Frame</translation>
     </message>
     <message>
-        <location filename="../qml/InspectorPanel.qml" line="494"/>
+        <location filename="../qml/InspectorPanel.qml" line="557"/>
         <source>None</source>
         <translation>None</translation>
     </message>
     <message>
-        <location filename="../qml/InspectorPanel.qml" line="494"/>
+        <location filename="../qml/InspectorPanel.qml" line="557"/>
         <source>Minimal</source>
         <translation>Minimal</translation>
     </message>
     <message>
-        <location filename="../qml/InspectorPanel.qml" line="494"/>
+        <location filename="../qml/InspectorPanel.qml" line="557"/>
         <source>Title bar</source>
         <translation>Title bar</translation>
     </message>
     <message>
-        <location filename="../qml/InspectorPanel.qml" line="503"/>
+        <location filename="../qml/InspectorPanel.qml" line="566"/>
         <source>Title</source>
         <translation>Title</translation>
     </message>
     <message>
-        <location filename="../qml/InspectorPanel.qml" line="509"/>
+        <location filename="../qml/InspectorPanel.qml" line="572"/>
         <source>Window title</source>
         <translation>Window title</translation>
     </message>
     <message>
-        <location filename="../qml/InspectorPanel.qml" line="524"/>
+        <location filename="../qml/InspectorPanel.qml" line="587"/>
         <source>Webcam</source>
         <translation>Webcam</translation>
     </message>
     <message>
-        <location filename="../qml/InspectorPanel.qml" line="534"/>
+        <location filename="../qml/InspectorPanel.qml" line="597"/>
         <source>This project has no webcam recording. Enable “Record webcam” in Settings before recording.</source>
         <translation>This project has no webcam recording. Enable “Record webcam” in Settings before recording.</translation>
     </message>
     <message>
-        <location filename="../qml/InspectorPanel.qml" line="542"/>
+        <location filename="../qml/InspectorPanel.qml" line="605"/>
         <source>Show webcam</source>
         <translation>Show webcam</translation>
     </message>
     <message>
-        <location filename="../qml/InspectorPanel.qml" line="558"/>
+        <location filename="../qml/InspectorPanel.qml" line="621"/>
         <source>Bottom right</source>
         <translation>Bottom right</translation>
     </message>
     <message>
-        <location filename="../qml/InspectorPanel.qml" line="558"/>
+        <location filename="../qml/InspectorPanel.qml" line="621"/>
         <source>Bottom left</source>
         <translation>Bottom left</translation>
     </message>
     <message>
-        <location filename="../qml/InspectorPanel.qml" line="558"/>
+        <location filename="../qml/InspectorPanel.qml" line="621"/>
         <source>Top right</source>
         <translation>Top right</translation>
     </message>
     <message>
-        <location filename="../qml/InspectorPanel.qml" line="558"/>
+        <location filename="../qml/InspectorPanel.qml" line="621"/>
         <source>Top left</source>
         <translation>Top left</translation>
     </message>
     <message>
-        <location filename="../qml/InspectorPanel.qml" line="564"/>
+        <location filename="../qml/InspectorPanel.qml" line="480"/>
+        <location filename="../qml/InspectorPanel.qml" line="627"/>
         <source>Size</source>
         <translation>Size</translation>
     </message>
     <message>
-        <location filename="../qml/InspectorPanel.qml" line="573"/>
+        <location filename="../qml/InspectorPanel.qml" line="474"/>
+        <location filename="../qml/InspectorPanel.qml" line="636"/>
         <source>Circle</source>
         <translation>Circle</translation>
     </message>
@@ -511,68 +559,73 @@
 <context>
     <name>RecordingHud</name>
     <message>
-        <location filename="../qml/RecordingHud.qml" line="29"/>
+        <location filename="../qml/RecordingHud.qml" line="57"/>
         <source>Recording</source>
         <translation>Recording</translation>
     </message>
     <message>
-        <location filename="../qml/RecordingHud.qml" line="88"/>
+        <location filename="../qml/RecordingHud.qml" line="143"/>
         <source>Go</source>
         <translation>Go</translation>
     </message>
     <message>
-        <location filename="../qml/RecordingHud.qml" line="98"/>
-        <location filename="../qml/RecordingHud.qml" line="185"/>
+        <location filename="../qml/RecordingHud.qml" line="150"/>
+        <source>Recording starts…</source>
+        <translation>Recording starts…</translation>
+    </message>
+    <message>
+        <location filename="../qml/RecordingHud.qml" line="160"/>
+        <location filename="../qml/RecordingHud.qml" line="245"/>
         <source>Cancel</source>
         <translation>Cancel</translation>
     </message>
     <message>
-        <location filename="../qml/RecordingHud.qml" line="134"/>
+        <location filename="../qml/RecordingHud.qml" line="194"/>
         <source>Saving…</source>
         <translation>Saving…</translation>
     </message>
     <message>
-        <location filename="../qml/RecordingHud.qml" line="164"/>
+        <location filename="../qml/RecordingHud.qml" line="224"/>
         <source>Capturing mouse clicks</source>
         <translation>Capturing mouse clicks</translation>
     </message>
     <message>
-        <location filename="../qml/RecordingHud.qml" line="165"/>
+        <location filename="../qml/RecordingHud.qml" line="225"/>
         <source>Mouse-click capture is off or unavailable</source>
         <translation>Mouse-click capture is off or unavailable</translation>
     </message>
     <message>
-        <location filename="../qml/RecordingHud.qml" line="172"/>
+        <location filename="../qml/RecordingHud.qml" line="232"/>
         <source>Resume</source>
         <translation>Resume</translation>
     </message>
     <message>
-        <location filename="../qml/RecordingHud.qml" line="172"/>
+        <location filename="../qml/RecordingHud.qml" line="232"/>
         <source>Pause</source>
         <translation>Pause</translation>
     </message>
     <message>
-        <location filename="../qml/RecordingHud.qml" line="179"/>
+        <location filename="../qml/RecordingHud.qml" line="239"/>
         <source>Stop</source>
         <translation>Stop</translation>
     </message>
     <message>
-        <location filename="../qml/RecordingHud.qml" line="194"/>
+        <location filename="../qml/RecordingHud.qml" line="255"/>
         <source>Discard recording?</source>
         <translation>Discard recording?</translation>
     </message>
     <message>
-        <location filename="../qml/RecordingHud.qml" line="195"/>
+        <location filename="../qml/RecordingHud.qml" line="256"/>
         <source>The current recording will be deleted and cannot be recovered.</source>
         <translation>The current recording will be deleted and cannot be recovered.</translation>
     </message>
     <message>
-        <location filename="../qml/RecordingHud.qml" line="196"/>
+        <location filename="../qml/RecordingHud.qml" line="257"/>
         <source>Discard</source>
         <translation>Discard</translation>
     </message>
     <message>
-        <location filename="../qml/RecordingHud.qml" line="197"/>
+        <location filename="../qml/RecordingHud.qml" line="258"/>
         <source>Keep recording</source>
         <translation>Keep recording</translation>
     </message>
@@ -658,14 +711,14 @@
     <message>
         <location filename="../qml/SettingsPage.qml" line="21"/>
         <location filename="../qml/SettingsPage.qml" line="22"/>
-        <location filename="../qml/SettingsPage.qml" line="458"/>
+        <location filename="../qml/SettingsPage.qml" line="466"/>
         <source>Storage</source>
         <translation>Storage</translation>
     </message>
     <message>
         <location filename="../qml/SettingsPage.qml" line="21"/>
         <location filename="../qml/SettingsPage.qml" line="22"/>
-        <location filename="../qml/SettingsPage.qml" line="507"/>
+        <location filename="../qml/SettingsPage.qml" line="515"/>
         <source>Appearance</source>
         <translation>Appearance</translation>
     </message>
@@ -677,7 +730,7 @@
     </message>
     <message>
         <location filename="../qml/SettingsPage.qml" line="21"/>
-        <location filename="../qml/SettingsPage.qml" line="640"/>
+        <location filename="../qml/SettingsPage.qml" line="648"/>
         <source>Developer</source>
         <translation>Developer</translation>
     </message>
@@ -787,142 +840,152 @@
         <translation>The main window disappears during capture and returns when you stop.</translation>
     </message>
     <message>
-        <location filename="../qml/SettingsPage.qml" line="341"/>
+        <location filename="../qml/SettingsPage.qml" line="330"/>
+        <source>Collapse recording HUD</source>
+        <translation>Collapse recording HUD</translation>
+    </message>
+    <message>
+        <location filename="../qml/SettingsPage.qml" line="331"/>
+        <source>Shrink the HUD to a thin bottom-edge sliver while recording so it barely shows in the capture. Hover it (or pause) to expand.</source>
+        <translation>Shrink the HUD to a thin bottom-edge sliver while recording so it barely shows in the capture. Hover it (or pause) to expand.</translation>
+    </message>
+    <message>
+        <location filename="../qml/SettingsPage.qml" line="349"/>
         <source>Webcam</source>
         <translation>Webcam</translation>
     </message>
     <message>
-        <location filename="../qml/SettingsPage.qml" line="343"/>
+        <location filename="../qml/SettingsPage.qml" line="351"/>
         <source>Record webcam</source>
         <translation>Record webcam</translation>
     </message>
     <message>
-        <location filename="../qml/SettingsPage.qml" line="345"/>
+        <location filename="../qml/SettingsPage.qml" line="353"/>
         <source>Capture %1 into a sidecar, shown as an overlay in the editor.</source>
         <translation>Capture %1 into a sidecar, shown as an overlay in the editor.</translation>
     </message>
     <message>
-        <location filename="../qml/SettingsPage.qml" line="346"/>
+        <location filename="../qml/SettingsPage.qml" line="354"/>
         <source>No camera found at %1.</source>
         <translation>No camera found at %1.</translation>
     </message>
     <message>
-        <location filename="../qml/SettingsPage.qml" line="354"/>
+        <location filename="../qml/SettingsPage.qml" line="362"/>
         <source>Camera device</source>
         <translation>Camera device</translation>
     </message>
     <message>
-        <location filename="../qml/SettingsPage.qml" line="372"/>
+        <location filename="../qml/SettingsPage.qml" line="380"/>
         <source>Mouse clicks</source>
         <translation>Mouse clicks</translation>
     </message>
     <message>
-        <location filename="../qml/SettingsPage.qml" line="374"/>
+        <location filename="../qml/SettingsPage.qml" line="382"/>
         <source>Capture mouse clicks</source>
         <translation>Capture mouse clicks</translation>
     </message>
     <message>
-        <location filename="../qml/SettingsPage.qml" line="375"/>
+        <location filename="../qml/SettingsPage.qml" line="383"/>
         <source>Record click timings to drive automatic zoom.</source>
         <translation>Record click timings to drive automatic zoom.</translation>
     </message>
     <message>
-        <location filename="../qml/SettingsPage.qml" line="398"/>
+        <location filename="../qml/SettingsPage.qml" line="406"/>
         <source>Re-check</source>
         <translation>Re-check</translation>
     </message>
     <message>
-        <location filename="../qml/SettingsPage.qml" line="419"/>
+        <location filename="../qml/SettingsPage.qml" line="427"/>
         <source>Copy</source>
         <translation>Copy</translation>
     </message>
     <message>
-        <location filename="../qml/SettingsPage.qml" line="427"/>
+        <location filename="../qml/SettingsPage.qml" line="435"/>
         <source>Re-login required after joining the group. Input-group access lets software observe input devices; Studio only records mouse button timings while you record.</source>
         <translation>Re-login required after joining the group. Input-group access lets software observe input devices; Studio only records mouse button timings while you record.</translation>
     </message>
     <message>
-        <location filename="../qml/SettingsPage.qml" line="438"/>
+        <location filename="../qml/SettingsPage.qml" line="446"/>
         <source>This build has no input-device support, so mouse clicks won&apos;t be recorded.</source>
         <translation>This build has no input-device support, so mouse clicks won&apos;t be recorded.</translation>
     </message>
     <message>
-        <location filename="../qml/SettingsPage.qml" line="460"/>
+        <location filename="../qml/SettingsPage.qml" line="468"/>
         <source>Projects folder</source>
         <translation>Projects folder</translation>
     </message>
     <message>
-        <location filename="../qml/SettingsPage.qml" line="467"/>
+        <location filename="../qml/SettingsPage.qml" line="475"/>
         <source>Where recordings and their projects are saved.</source>
         <translation>Where recordings and their projects are saved.</translation>
     </message>
     <message>
-        <location filename="../qml/SettingsPage.qml" line="482"/>
+        <location filename="../qml/SettingsPage.qml" line="490"/>
         <source>Browse…</source>
         <translation>Browse…</translation>
     </message>
     <message>
-        <location filename="../qml/SettingsPage.qml" line="511"/>
+        <location filename="../qml/SettingsPage.qml" line="519"/>
         <source>Color theme for the whole app. “System” follows your desktop&apos;s light/dark scheme.</source>
         <translation>Color theme for the whole app. “System” follows your desktop&apos;s light/dark scheme.</translation>
     </message>
     <message>
-        <location filename="../qml/SettingsPage.qml" line="587"/>
+        <location filename="../qml/SettingsPage.qml" line="595"/>
         <source>Unisic Studio</source>
         <translation>Unisic Studio</translation>
     </message>
     <message>
-        <location filename="../qml/SettingsPage.qml" line="593"/>
+        <location filename="../qml/SettingsPage.qml" line="601"/>
         <source>Version %1%2</source>
         <translation>Version %1%2</translation>
     </message>
     <message>
-        <location filename="../qml/SettingsPage.qml" line="594"/>
+        <location filename="../qml/SettingsPage.qml" line="602"/>
         <source> · dev</source>
         <translation> · dev</translation>
     </message>
     <message>
-        <location filename="../qml/SettingsPage.qml" line="603"/>
+        <location filename="../qml/SettingsPage.qml" line="611"/>
         <source>Free software under the GNU General Public License v3. Zero telemetry.</source>
         <translation>Free software under the GNU General Public License v3. Zero telemetry.</translation>
     </message>
     <message>
-        <location filename="../qml/SettingsPage.qml" line="644"/>
+        <location filename="../qml/SettingsPage.qml" line="652"/>
         <source>Exercise each path in isolation. Dev builds only.</source>
         <translation>Exercise each path in isolation. Dev builds only.</translation>
     </message>
     <message>
-        <location filename="../qml/SettingsPage.qml" line="651"/>
+        <location filename="../qml/SettingsPage.qml" line="659"/>
         <source>Import test video</source>
         <translation>Import test video</translation>
     </message>
     <message>
-        <location filename="../qml/SettingsPage.qml" line="653"/>
+        <location filename="../qml/SettingsPage.qml" line="661"/>
         <source>Open recording HUD</source>
         <translation>Open recording HUD</translation>
     </message>
     <message>
-        <location filename="../qml/SettingsPage.qml" line="655"/>
+        <location filename="../qml/SettingsPage.qml" line="663"/>
         <source>Run export test</source>
         <translation>Run export test</translation>
     </message>
     <message>
-        <location filename="../qml/SettingsPage.qml" line="657"/>
+        <location filename="../qml/SettingsPage.qml" line="665"/>
         <source>Run auto-zoom test</source>
         <translation>Run auto-zoom test</translation>
     </message>
     <message>
-        <location filename="../qml/SettingsPage.qml" line="669"/>
+        <location filename="../qml/SettingsPage.qml" line="677"/>
         <source>Smoke test</source>
         <translation>Smoke test</translation>
     </message>
     <message>
-        <location filename="../qml/SettingsPage.qml" line="674"/>
+        <location filename="../qml/SettingsPage.qml" line="682"/>
         <source>Run full smoke test (F8)</source>
         <translation>Run full smoke test (F8)</translation>
     </message>
     <message>
-        <location filename="../qml/SettingsPage.qml" line="681"/>
+        <location filename="../qml/SettingsPage.qml" line="689"/>
         <source>Copy log</source>
         <translation>Copy log</translation>
     </message>
@@ -1034,133 +1097,133 @@
         <translation>Recorded, but the project could not be opened: %1</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="596"/>
+        <location filename="../src/StudioApp.cpp" line="608"/>
         <source>=== done: %1 PASS, %2 FAIL, %3 SKIP%4 ===</source>
         <translation>=== done: %1 PASS, %2 FAIL, %3 SKIP%4 ===</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="600"/>
+        <location filename="../src/StudioApp.cpp" line="612"/>
         <source> — FAILURES PRESENT</source>
         <translation> — FAILURES PRESENT</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="626"/>
+        <location filename="../src/StudioApp.cpp" line="638"/>
         <source>%1: PASS (%2 KB)</source>
         <translation>%1: PASS (%2 KB)</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="628"/>
+        <location filename="../src/StudioApp.cpp" line="640"/>
         <source>%1: FAIL (%2)</source>
         <translation>%1: FAIL (%2)</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="646"/>
+        <location filename="../src/StudioApp.cpp" line="658"/>
         <source>=== Unisic Studio smoke test ===</source>
         <translation>=== Unisic Studio smoke test ===</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="650"/>
+        <location filename="../src/StudioApp.cpp" line="662"/>
         <source>fixture video: FAIL (could not generate a test clip — is ffmpeg installed?)</source>
         <translation>fixture video: FAIL (could not generate a test clip — is ffmpeg installed?)</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="651"/>
+        <location filename="../src/StudioApp.cpp" line="663"/>
         <source>=== smoke test aborted ===</source>
         <translation>=== smoke test aborted ===</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="656"/>
+        <location filename="../src/StudioApp.cpp" line="668"/>
         <source>fixture video: PASS (%1)</source>
         <translation>fixture video: PASS (%1)</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="674"/>
+        <location filename="../src/StudioApp.cpp" line="686"/>
         <source>project roundtrip: PASS</source>
         <translation>project roundtrip: PASS</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="675"/>
+        <location filename="../src/StudioApp.cpp" line="687"/>
         <source>project roundtrip: FAIL (%1)</source>
         <translation>project roundtrip: FAIL (%1)</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="709"/>
+        <location filename="../src/StudioApp.cpp" line="721"/>
         <source>engine generate: PASS (%1 keyframes)</source>
         <translation>engine generate: PASS (%1 keyframes)</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="710"/>
+        <location filename="../src/StudioApp.cpp" line="722"/>
         <source>engine generate: FAIL (no keyframes from a click cluster)</source>
         <translation>engine generate: FAIL (no keyframes from a click cluster)</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="720"/>
+        <location filename="../src/StudioApp.cpp" line="732"/>
         <source>video probe: PASS (%1 ms, %2x%3, %4 fps)</source>
         <translation>video probe: PASS (%1 ms, %2x%3, %4 fps)</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="725"/>
+        <location filename="../src/StudioApp.cpp" line="737"/>
         <source>video probe: FAIL (%1 ms, %2x%3)</source>
         <translation>video probe: FAIL (%1 ms, %2x%3)</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="733"/>
+        <location filename="../src/StudioApp.cpp" line="745"/>
         <source>video probe: FAIL (%1)</source>
         <translation>video probe: FAIL (%1)</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="742"/>
+        <location filename="../src/StudioApp.cpp" line="754"/>
         <source>offscreen render + MP4 export</source>
         <translation>offscreen render + MP4 export</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="744"/>
+        <location filename="../src/StudioApp.cpp" line="756"/>
         <source>GIF export</source>
         <translation>GIF export</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="754"/>
+        <location filename="../src/StudioApp.cpp" line="766"/>
         <source>recorder arm+cancel: SKIP (no desktop portal on the session bus)</source>
         <translation>recorder arm+cancel: SKIP (no desktop portal on the session bus)</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="771"/>
+        <location filename="../src/StudioApp.cpp" line="783"/>
         <source>recorder arm+cancel: PASS (armed then cancelled, no commit)</source>
         <translation>recorder arm+cancel: PASS (armed then cancelled, no commit)</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="774"/>
+        <location filename="../src/StudioApp.cpp" line="786"/>
         <source>recorder arm+cancel: SKIP (portal/stream unavailable: %1)</source>
         <translation>recorder arm+cancel: SKIP (portal/stream unavailable: %1)</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="777"/>
+        <location filename="../src/StudioApp.cpp" line="789"/>
         <source>recorder arm+cancel: SKIP (portal did not arm — needs interactive consent)</source>
         <translation>recorder arm+cancel: SKIP (portal did not arm — needs interactive consent)</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="791"/>
-        <location filename="../src/StudioApp.cpp" line="811"/>
+        <location filename="../src/StudioApp.cpp" line="803"/>
+        <location filename="../src/StudioApp.cpp" line="823"/>
         <source>Could not generate a test video (is ffmpeg installed?).</source>
         <translation>Could not generate a test video (is ffmpeg installed?).</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="802"/>
+        <location filename="../src/StudioApp.cpp" line="814"/>
         <source>Recording HUD failed to load.</source>
         <translation>Recording HUD failed to load.</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="830"/>
+        <location filename="../src/StudioApp.cpp" line="842"/>
         <source>Export test OK: %1</source>
         <translation>Export test OK: %1</translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="834"/>
+        <location filename="../src/StudioApp.cpp" line="846"/>
         <source>Export test failed: %1</source>
         <translation>Export test failed: %1</translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/StudioApp.cpp" line="877"/>
+        <location filename="../src/StudioApp.cpp" line="889"/>
         <source>Auto-zoom test OK: %n keyframe(s).</source>
         <translation>
             <numerusform>Auto-zoom test OK: %n keyframe(s).</numerusform>
@@ -1168,7 +1231,7 @@
         </translation>
     </message>
     <message>
-        <location filename="../src/StudioApp.cpp" line="878"/>
+        <location filename="../src/StudioApp.cpp" line="890"/>
         <source>Auto-zoom test produced no keyframes.</source>
         <translation>Auto-zoom test produced no keyframes.</translation>
     </message>
@@ -1345,22 +1408,22 @@
         </translation>
     </message>
     <message>
-        <location filename="../qml/Timeline.qml" line="307"/>
+        <location filename="../qml/Timeline.qml" line="325"/>
         <source>Regenerate automatic zoom?</source>
         <translation>Regenerate automatic zoom?</translation>
     </message>
     <message>
-        <location filename="../qml/Timeline.qml" line="308"/>
+        <location filename="../qml/Timeline.qml" line="326"/>
         <source>Replaces automatic zoom points; manual and locked ones stay.</source>
         <translation>Replaces automatic zoom points; manual and locked ones stay.</translation>
     </message>
     <message>
-        <location filename="../qml/Timeline.qml" line="309"/>
+        <location filename="../qml/Timeline.qml" line="327"/>
         <source>Regenerate</source>
         <translation>Regenerate</translation>
     </message>
     <message>
-        <location filename="../qml/Timeline.qml" line="310"/>
+        <location filename="../qml/Timeline.qml" line="328"/>
         <source>Cancel</source>
         <translation>Cancel</translation>
     </message>
