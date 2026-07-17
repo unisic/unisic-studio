@@ -1,4 +1,5 @@
 #pragma once
+#include <QByteArray>
 #include <QElapsedTimer>
 #include <QList>
 #include <QObject>
@@ -134,4 +135,5 @@ private:
 
     FrameDecoder *m_decoder = nullptr;  // child of this
     QProcess *m_encoder = nullptr;      // reaped via FfmpegUtil::stopProcess
+    QByteArray m_rowBuf;                // reused row-pack scratch (padded-stride path only)
 };

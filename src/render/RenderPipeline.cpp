@@ -24,6 +24,8 @@
 #include <QUrl>
 #include <QVariant>
 
+#include <cstring>
+
 namespace {
 
 // Round DOWN to even — H.264/VP9 with yuv420p need even dimensions.
@@ -305,7 +307,13 @@ void RenderPipeline::onFrame(int index, const QImage &frame)
     m_rc->endFrame();
 
     QImage grabbed = m_fbo->toImage(); // top-down already
-    grabbed.convertTo(QImage::Format_ARGB32); // ARGB32 == ffmpeg 'bgra' byte order (LE)
+    // ffmpeg's 'bgra' rawvideo == QImage::Format_ARGB32 byte order on little-endian
+    // (Format_RGB32 is the same layout with an implicit 0xff alpha). Only pay for
+    // the full-frame conversion copy when the readback isn't already in that layout;
+    // some GL backends hand back ARGB32/RGB32 directly. (This host's FBO yields
+    // RGBA8888_Premultiplied, so the convert still runs here.)
+    if (grabbed.format() != QImage::Format_ARGB32 && grabbed.format() != QImage::Format_RGB32)
+        grabbed.convertTo(QImage::Format_ARGB32);
     writeFrameToEncoder(grabbed);
 
     m_framesDone = index + 1;
@@ -324,8 +332,24 @@ void RenderPipeline::writeFrameToEncoder(const QImage &grabbed)
         return;
     const int w = grabbed.width();
     const int h = grabbed.height();
-    for (int y = 0; y < h; ++y)
-        m_encoder->write(reinterpret_cast<const char *>(grabbed.constScanLine(y)), qint64(w) * 4);
+    const qint64 rowBytes = qint64(w) * 4;
+    if (grabbed.bytesPerLine() == rowBytes) {
+        // Scanlines are contiguous (w*4 is 4-byte aligned, as ARGB32 is at this
+        // width) — write the whole frame in ONE call instead of h per-row writes.
+        // Each small write forced a fresh QRingChunk allocation whenever the encoder
+        // pipe fell behind; this collapses ~h allocations/frame to ~1.
+        m_encoder->write(reinterpret_cast<const char *>(grabbed.constBits()), rowBytes * h);
+    } else {
+        // Padded stride: pack the rows into a reused buffer once, then a single
+        // write (still one QRingChunk, not h).
+        m_rowBuf.resize(rowBytes * h);
+        char *dst = m_rowBuf.data();
+        for (int y = 0; y < h; ++y) {
+            memcpy(dst, grabbed.constScanLine(y), size_t(rowBytes));
+            dst += rowBytes;
+        }
+        m_encoder->write(m_rowBuf.constData(), m_rowBuf.size());
+    }
     // Bound the write buffer if the encoder ever falls behind the renderer.
     while (m_encoder && m_encoder->bytesToWrite() > (32 * 1024 * 1024))
         m_encoder->waitForBytesWritten(200);

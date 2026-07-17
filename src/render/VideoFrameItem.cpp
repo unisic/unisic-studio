@@ -20,10 +20,13 @@ void VideoFrameItem::setFrame(const QImage &frame)
 {
     {
         QMutexLocker lock(&m_mutex);
-        // Detach to an independent copy: the producer's buffer is reused for the
-        // next frame the moment this returns.
+        // Share the frame (implicit COW) rather than deep-copying it: the export
+        // producer (FrameDecoder) allocates a fresh QImage per frame and never
+        // writes into this one again, and updatePaintNode takes its own shared ref
+        // under the same mutex — so an eager detach() here was a wasted full-frame
+        // copy (~sizeInBytes per frame). Any producer that DID mutate its buffer
+        // would detach itself on write via COW, leaving this reference intact.
         m_pending = frame;
-        m_pending.detach();
         m_hasPending = true;
     }
     requestRepaint();
