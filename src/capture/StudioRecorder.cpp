@@ -351,6 +351,7 @@ void StudioRecorder::beginEncoding(const QSize &streamSize)
         return;
 
     m_state = Recording;
+    startWebcamCapture(base); // best-effort; never fails the screen recording
     // Provisional t0 so a stop before the first frame still gives cursor/click
     // timestamps a sane origin; the first sampled frame overwrites it with the
     // real pts (m_haveT0 stays false until then).
@@ -526,6 +527,7 @@ void StudioRecorder::stop()
         m_session->deleteLater();
         m_session = nullptr;
     }
+    stopWebcamCapture();             // finalize the webcam mkv before we move it
     if (!m_ffmpeg) {
         fail(tr("Recording encoder is not running"));
         return;
@@ -533,6 +535,63 @@ void StudioRecorder::stop()
     m_ffmpeg->closeWriteChannel();   // EOF → ffmpeg finalizes; finished() continues
     m_lastFrame.clear();
     emit elapsedChanged();
+}
+
+void StudioRecorder::startWebcamCapture(const QString &base)
+{
+    if (!m_settings->recordWebcam())
+        return;
+    const QString dev = m_settings->webcamDevice();
+    if (dev.isEmpty() || !QFileInfo::exists(dev))
+        return; // no device — the Settings toggle already gates on this
+
+    const QString cacheBase = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+    QDir().mkpath(cacheBase);
+    m_webcamRawPath = cacheBase + QStringLiteral("/unisic-studio-webcam-%1.mkv").arg(base);
+    m_webcamFinalPath =
+        m_settings->projectsDirectory() + QLatin1Char('/') + base + QStringLiteral("_webcam.mkv");
+
+    // A separate ffmpeg reading the v4l2 device. NOT -nostdin: stopWebcamCapture()
+    // writes 'q' so the container is finalized cleanly. Any failure just drops the
+    // webcam (the screen recording is unaffected).
+    const QStringList args{QStringLiteral("-nostats"), QStringLiteral("-loglevel"),
+                           QStringLiteral("error"), QStringLiteral("-f"), QStringLiteral("v4l2"),
+                           QStringLiteral("-i"), dev, QStringLiteral("-c:v"),
+                           QStringLiteral("libx264"), QStringLiteral("-preset"),
+                           QStringLiteral("veryfast"), QStringLiteral("-pix_fmt"),
+                           QStringLiteral("yuv420p"), QStringLiteral("-y"), m_webcamRawPath};
+    m_webcamProc = new QProcess(this);
+    connect(m_webcamProc, &QProcess::errorOccurred, this, [this](QProcess::ProcessError) {
+        // Drop the webcam quietly; screen recording continues.
+        if (m_webcamProc) {
+            m_webcamProc->deleteLater();
+            m_webcamProc = nullptr;
+        }
+        if (!m_webcamRawPath.isEmpty())
+            QFile::remove(m_webcamRawPath);
+        m_webcamRawPath.clear();
+        m_webcamFinalPath.clear();
+    });
+    m_webcamProc->start(QStringLiteral("ffmpeg"), args);
+    if (!m_webcamProc->waitForStarted(3000)) {
+        qWarning() << "webcam capture could not start on" << dev;
+        FfmpegUtil::stopProcess(m_webcamProc);
+        m_webcamRawPath.clear();
+        m_webcamFinalPath.clear();
+    }
+}
+
+void StudioRecorder::stopWebcamCapture()
+{
+    if (!m_webcamProc)
+        return;
+    if (m_webcamProc->state() == QProcess::Running) {
+        m_webcamProc->write("q\n");   // ffmpeg's clean-stop key → finalizes the mkv
+        m_webcamProc->closeWriteChannel();
+        m_webcamProc->waitForFinished(4000);
+    }
+    // Fully reap (SIGKILL fallback if 'q' didn't land); nulls the pointer.
+    FfmpegUtil::stopProcess(m_webcamProc);
 }
 
 void StudioRecorder::stopGrabber()
@@ -636,6 +695,16 @@ void StudioRecorder::finalize()
     in.hadClickCapture = m_hadClickCapture;
     in.compositor = qEnvironmentVariable("XDG_CURRENT_DESKTOP");
 
+    // Move the finalized webcam sidecar next to the master (best-effort; a failure
+    // just omits the overlay from the project).
+    if (!m_webcamRawPath.isEmpty() && QFileInfo::exists(m_webcamRawPath)
+        && !m_webcamFinalPath.isEmpty()) {
+        if (moveFile(m_webcamRawPath, m_webcamFinalPath))
+            in.webcamAbsPath = QFileInfo(m_webcamFinalPath).absoluteFilePath();
+        else
+            QFile::remove(m_webcamRawPath);
+    }
+
     QString err;
     if (!RecordingAssembler::assembleAndSave(in, &err)) {
         QFile::remove(m_masterPath);
@@ -684,6 +753,7 @@ void StudioRecorder::teardownProcesses()
 {
     FfmpegUtil::stopProcess(m_ffmpeg);     // non-blocking; nulls the pointer
     FfmpegUtil::stopProcess(m_converter);
+    FfmpegUtil::stopProcess(m_webcamProc);
 }
 
 void StudioRecorder::cancel()
@@ -703,6 +773,10 @@ void StudioRecorder::cancel()
     teardownProcesses();
     if (!m_rawMasterPath.isEmpty())
         QFile::remove(m_rawMasterPath);
+    if (!m_webcamRawPath.isEmpty())
+        QFile::remove(m_webcamRawPath);
+    if (!m_webcamFinalPath.isEmpty())
+        QFile::remove(m_webcamFinalPath);
     // A partial master/sidecar can exist if we were finalizing.
     if (m_state == Finalizing) {
         if (!m_masterPath.isEmpty())
@@ -741,6 +815,8 @@ void StudioRecorder::cleanup()
     m_rawMasterPath.clear();
     m_masterPath.clear();
     m_sidecarPath.clear();
+    m_webcamRawPath.clear();
+    m_webcamFinalPath.clear();
     m_elapsed.invalidate();
     emit elapsedChanged();
 }

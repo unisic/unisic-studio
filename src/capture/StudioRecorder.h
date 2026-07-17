@@ -91,6 +91,14 @@ private:
     void cleanup();
     void fail(const QString &msg);
 
+    // Optional webcam sidecar capture (a SECOND, independent ffmpeg reading the
+    // v4l2 device). Best-effort: a webcam failure never aborts the screen
+    // recording. startWebcamCapture spawns it when the setting is on and the
+    // device exists; stopWebcamCapture stops it cleanly (writes 'q') so the mkv
+    // is finalized before finalize() moves it next to the master.
+    void startWebcamCapture(const QString &base);
+    void stopWebcamCapture();
+
     static qint64 nowMonoNs();
     static bool moveFile(const QString &src, const QString &dst);
     // ffmpeg args cutting the given video-ms pause spans from input into output,
@@ -114,6 +122,9 @@ private:
     ClickCapture *m_clicks = nullptr;
     QProcess *m_ffmpeg = nullptr;
     QProcess *m_converter = nullptr;   // pause-excision pass
+    QProcess *m_webcamProc = nullptr;  // optional v4l2 webcam sidecar encoder
+    QString m_webcamRawPath;           // encoder target in the XDG cache
+    QString m_webcamFinalPath;         // final _webcam.mkv beside the master
 
     QTimer m_sampler;
     QTimer m_maxTimer;

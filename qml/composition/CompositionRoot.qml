@@ -50,6 +50,16 @@ Item {
     readonly property string _frame:         styleModel ? styleModel.frameStyle : "none"
     readonly property string _frameTitle:    styleModel ? styleModel.frameTitle : ""
     readonly property bool   _hasPoster:     root.posterSource !== ""
+    // Webcam overlay style (only shown when a feed is actually parented in).
+    readonly property bool   _wcEnabled:     styleModel ? styleModel.webcamEnabled : false
+    readonly property string _wcPos:         styleModel ? styleModel.webcamPosition : "bottomRight"
+    readonly property real   _wcSizePct:     styleModel ? styleModel.webcamSizePct : 20
+    readonly property bool   _wcRounded:     styleModel ? styleModel.webcamRounded : true
+
+    // The consumer parents its webcam feed (a VideoOutput in preview) into
+    // webcamSlot and flips webcamHasFeed true; the overlay hides otherwise.
+    property bool webcamHasFeed: false
+    readonly property alias webcamSlot: webcamHolder
 
     // ---- Output geometry ----------------------------------------------------
     readonly property real _srcAspect: videoSize.height > 0
@@ -290,6 +300,59 @@ Item {
             visible: false
             layer.enabled: true
             Rectangle { anchors.fill: parent; radius: root.dispRadius; color: "black" }
+        }
+
+        // ---- Webcam overlay ----------------------------------------------------
+        // A corner picture-in-picture of the recorded webcam sidecar. The consumer
+        // parents the actual feed into webcamSlot (preview: a VideoOutput; export
+        // compositing is a documented TODO — the schema + slot are in place). The
+        // slot is masked to a circle (rounded) or a rounded rectangle; a matching
+        // ring is drawn on top (unmasked) so the border isn't clipped away.
+        readonly property real _wcSize: Math.max(16, Math.round(root.canvasW * root._wcSizePct / 100))
+        readonly property real _wcMargin: root.padPx + Math.round(root.canvasW * 0.012)
+        Item {
+            id: webcamHolder
+            visible: root._wcEnabled && root.webcamHasFeed
+            width: canvas._wcSize
+            height: root._wcRounded ? canvas._wcSize : Math.round(canvas._wcSize * 9 / 16)
+            x: (root._wcPos === "bottomLeft" || root._wcPos === "topLeft")
+               ? canvas._wcMargin : (root.canvasW - width - canvas._wcMargin)
+            y: (root._wcPos === "topLeft" || root._wcPos === "topRight")
+               ? canvas._wcMargin : (root.canvasH - height - canvas._wcMargin)
+            z: 60
+            clip: true
+            // Rounded/circle mask over whatever the consumer parents in.
+            layer.enabled: true
+            layer.effect: MultiEffect {
+                maskEnabled: true
+                maskSource: webcamMask
+                maskThresholdMin: 0.5
+                maskSpreadAtMin: 1.0
+            }
+        }
+        // Mask source (sibling, not a child — avoids the layer sampling itself).
+        Item {
+            id: webcamMask
+            visible: false
+            x: webcamHolder.x; y: webcamHolder.y
+            width: webcamHolder.width; height: webcamHolder.height
+            layer.enabled: true
+            Rectangle {
+                anchors.fill: parent
+                radius: root._wcRounded ? Math.min(width, height) / 2 : root.dispRadius
+                color: "black"
+            }
+        }
+        // Border ring on top (unmasked, so it isn't clipped).
+        Rectangle {
+            visible: webcamHolder.visible
+            x: webcamHolder.x; y: webcamHolder.y
+            width: webcamHolder.width; height: webcamHolder.height
+            z: 61
+            color: "transparent"
+            radius: root._wcRounded ? Math.min(width, height) / 2 : root.dispRadius
+            border.width: Math.max(1, Math.round(2 * root._scale))
+            border.color: Qt.rgba(1, 1, 1, 0.85)
         }
     }
 }

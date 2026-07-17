@@ -154,6 +154,10 @@ public:
     // `input` group). The UI wraps its own explanatory text around it.
     Q_INVOKABLE QString inputPermissionFixHint() const;
 
+    // Whether a v4l2 webcam device node exists (Settings gates the webcam toggle
+    // on it). Cheap stat; call from QML when the pane opens, not on a timer.
+    Q_INVOKABLE bool webcamDeviceAvailable(const QString &device) const;
+
     // --- developer aids (dev builds only; each is a no-op in a release build) ---
     // Sequential smoke test across every load-bearing path (project roundtrip,
     // engine generate, video probe, offscreen render + MP4 export, GIF pass,

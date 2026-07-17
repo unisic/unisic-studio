@@ -56,6 +56,28 @@ void StudioProject::setVideoAbsPath(const QString &v)
     emit videoChanged();
 }
 
+void StudioProject::setWebcamRelPath(const QString &v)
+{
+    if (m_webcamRelPath == v) return;
+    m_webcamRelPath = v;
+    // A live edit doesn't re-run resolveVideo(), so mirror into resolved when it
+    // points at an existing absolute path (the recorder sets an absolute sidecar).
+    if (QFileInfo(v).isAbsolute() && QFileInfo::exists(v))
+        m_webcamResolved = v;
+    markDirty();
+    emit videoChanged();
+}
+
+void StudioProject::setWebcamAbsPath(const QString &v)
+{
+    if (m_webcamAbsPath == v) return;
+    m_webcamAbsPath = v;
+    if (m_webcamResolved.isEmpty() && !v.isEmpty() && QFileInfo::exists(v))
+        m_webcamResolved = v;
+    markDirty();
+    emit videoChanged();
+}
+
 void StudioProject::setDurationMs(qint64 v)
 {
     if (m_durationMs == v) return;
@@ -176,6 +198,8 @@ QJsonObject StudioProject::toJson() const
         {QStringLiteral("cursorMode"), m_cursorMode},
         {QStringLiteral("t0MonoNs"), double(m_t0MonoNs)},
         {QStringLiteral("hadClickCapture"), m_hadClickCapture},
+        {QStringLiteral("webcamRelPath"), m_webcamRelPath},
+        {QStringLiteral("webcamAbsPath"), m_webcamAbsPath},
     };
     QJsonObject trim{
         {QStringLiteral("inMs"), double(m_trimInMs)},
@@ -233,6 +257,19 @@ void StudioProject::resolveVideo(const QString &projectFilePath)
         m_videoResolved = m_videoAbsPath;
     }
     m_videoMissing = m_videoResolved.isEmpty();
+
+    // Same rel-then-abs resolution for the optional webcam sidecar; absent is
+    // fine (hasWebcam() → false, the overlay simply hides).
+    m_webcamResolved.clear();
+    if (!m_webcamRelPath.isEmpty()) {
+        const QString rel = QFileInfo(dir.filePath(m_webcamRelPath)).absoluteFilePath();
+        if (QFileInfo::exists(rel))
+            m_webcamResolved = rel;
+    }
+    if (m_webcamResolved.isEmpty() && !m_webcamAbsPath.isEmpty()
+        && QFileInfo::exists(m_webcamAbsPath)) {
+        m_webcamResolved = m_webcamAbsPath;
+    }
 }
 
 StudioProject *StudioProject::load(const QString &path, QString *error)
@@ -292,6 +329,8 @@ StudioProject *StudioProject::load(const QString &path, QString *error)
     p->m_cursorMode = rec.value(QStringLiteral("cursorMode")).toString(QStringLiteral("none"));
     p->m_t0MonoNs = qint64(rec.value(QStringLiteral("t0MonoNs")).toDouble());
     p->m_hadClickCapture = rec.value(QStringLiteral("hadClickCapture")).toBool();
+    p->m_webcamRelPath = rec.value(QStringLiteral("webcamRelPath")).toString();
+    p->m_webcamAbsPath = rec.value(QStringLiteral("webcamAbsPath")).toString();
 
     const QJsonObject trim = o.value(QStringLiteral("trim")).toObject();
     p->m_trimInMs = qint64(trim.value(QStringLiteral("inMs")).toDouble());

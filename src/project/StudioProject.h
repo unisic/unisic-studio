@@ -44,6 +44,10 @@ class StudioProject : public QObject
     Q_PROPERTY(QString cursorMode READ cursorMode WRITE setCursorMode NOTIFY recordingChanged)
     Q_PROPERTY(qint64 t0MonoNs READ t0MonoNs WRITE setT0MonoNs NOTIFY recordingChanged)
     Q_PROPERTY(bool hadClickCapture READ hadClickCapture WRITE setHadClickCapture NOTIFY recordingChanged)
+    // Optional webcam sidecar recorded alongside the screen (schemaVersion stays
+    // 1 — additive). Resolved like the master video (rel first, then abs).
+    Q_PROPERTY(QString webcamResolved READ webcamResolved NOTIFY videoChanged)
+    Q_PROPERTY(bool hasWebcam READ hasWebcam NOTIFY videoChanged)
 
     Q_PROPERTY(qint64 trimInMs READ trimInMs WRITE setTrimInMs NOTIFY trimChanged)
     Q_PROPERTY(qint64 trimOutMs READ trimOutMs WRITE setTrimOutMs NOTIFY trimChanged)
@@ -96,6 +100,14 @@ public:
     void setCursorMode(const QString &v);
     void setT0MonoNs(qint64 v);
     void setHadClickCapture(bool v);
+
+    // --- webcam sidecar (optional) ---
+    QString webcamRelPath() const { return m_webcamRelPath; }
+    QString webcamAbsPath() const { return m_webcamAbsPath; }
+    QString webcamResolved() const { return m_webcamResolved; }
+    bool hasWebcam() const { return !m_webcamResolved.isEmpty(); }
+    void setWebcamRelPath(const QString &v);
+    void setWebcamAbsPath(const QString &v);
 
     // --- trim ---
     qint64 trimInMs() const { return m_trimInMs; }
@@ -160,6 +172,10 @@ private:
     QString m_cursorMode = QStringLiteral("none");
     qint64 m_t0MonoNs = 0;
     bool m_hadClickCapture = false;
+
+    QString m_webcamRelPath;
+    QString m_webcamAbsPath;
+    QString m_webcamResolved;   // resolved at load(); empty when absent/missing
 
     qint64 m_trimInMs = 0;
     qint64 m_trimOutMs = 0;

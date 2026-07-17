@@ -332,6 +332,41 @@ Item {
                 UCard {
                     width: page.cardWidth
                     Column {
+                        id: wcCol
+                        width: parent.width
+                        spacing: Theme.spacingS
+                        // Re-checked when the pane opens and when the path is edited.
+                        property bool webcamPresent: false
+                        Component.onCompleted: webcamPresent = Studio.webcamDeviceAvailable(Studio.settings.webcamDevice)
+                        SectionTitle { text: qsTr("Webcam") }
+                        SettingRow {
+                            label: qsTr("Record webcam")
+                            help: wcCol.webcamPresent
+                                  ? qsTr("Capture %1 into a sidecar, shown as an overlay in the editor.").arg(Studio.settings.webcamDevice)
+                                  : qsTr("No camera found at %1.").arg(Studio.settings.webcamDevice)
+                            USwitch {
+                                enabled: wcCol.webcamPresent
+                                checked: Studio.settings.recordWebcam && wcCol.webcamPresent
+                                onToggled: (c) => Studio.settings.recordWebcam = c
+                            }
+                        }
+                        SettingRow {
+                            label: qsTr("Camera device")
+                            UTextField {
+                                width: 180
+                                text: Studio.settings.webcamDevice
+                                onEdited: (t) => {
+                                    Studio.settings.webcamDevice = t
+                                    wcCol.webcamPresent = Studio.webcamDeviceAvailable(t)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                UCard {
+                    width: page.cardWidth
+                    Column {
                         width: parent.width
                         spacing: Theme.spacingS
                         SectionTitle { text: qsTr("Mouse clicks") }

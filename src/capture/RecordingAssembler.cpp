@@ -90,6 +90,11 @@ bool assembleAndSave(const Input &in, QString *error)
     project.setCursorMode(in.cursorMode);
     project.setT0MonoNs(in.t0MonoNs);
     project.setHadClickCapture(in.hadClickCapture);
+    if (!in.webcamAbsPath.isEmpty()) {
+        project.setWebcamAbsPath(in.webcamAbsPath);
+        project.setWebcamRelPath(
+            QFileInfo(in.sidecarPath).absoluteDir().relativeFilePath(in.webcamAbsPath));
+    }
     project.setCursorTrack(cursor);
     project.setClickTrack(clicks);
 

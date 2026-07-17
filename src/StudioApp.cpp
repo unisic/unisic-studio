@@ -430,6 +430,11 @@ QString StudioApp::inputPermissionFixHint() const
     return InputPermission::fixHint();
 }
 
+bool StudioApp::webcamDeviceAvailable(const QString &device) const
+{
+    return !device.isEmpty() && QFileInfo::exists(device);
+}
+
 // --- auto-zoom (M3) ----------------------------------------------------------
 
 void StudioApp::generateZoom(StudioProject *project, bool onlyIfEmpty)

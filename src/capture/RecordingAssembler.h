@@ -54,6 +54,7 @@ struct Input {
 
     QString masterAbsPath;     // final .mkv, already in the projects directory
     QString sidecarPath;       // where to write the .unisicstudio
+    QString webcamAbsPath;     // optional webcam sidecar .mkv (empty = none)
 
     QString cursorMode;        // metadata|embedded|none
     bool hadClickCapture = false;

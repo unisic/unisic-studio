@@ -218,6 +218,11 @@ bool RenderPipeline::buildScene(QString *error)
 
     // Cursor overlay: the recording was captured in Metadata mode, so without
     // this the pointer is invisible. Same object type as the live preview drives.
+    // TODO(webcam export): the composition has a webcamSlot and the project
+    // carries webcamResolved() (StudioProject), but export does NOT yet composite
+    // the webcam — that needs a SECOND FrameDecoder feeding a second VideoFrameItem
+    // parented into CompositionRoot.webcamSlot, decoded in lockstep with the master.
+    // The preview already shows it; export currently omits it (M4 scope decision).
     m_cursorPlayback = new CursorPlayback(m_s.projectId, this);
     m_cursorPlayback->setTracks(m_s.cursor, m_s.clicks, m_s.videoSize);
     CursorShapeProvider::registerShapes(m_s.projectId, m_s.cursor.shapes());

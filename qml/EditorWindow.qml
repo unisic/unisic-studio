@@ -34,6 +34,9 @@ Window {
                                                : editorProject.videoAbsPath)
         : ""
     readonly property string videoUrl: videoPath === "" ? "" : "file://" + encodeURI(videoPath)
+    // Optional webcam sidecar (composited as a corner overlay in the preview).
+    readonly property string webcamUrl: (editorProject && editorProject.hasWebcam)
+        ? "file://" + encodeURI(editorProject.webcamResolved) : ""
 
     function baseName(p) {
         if (!p) return ""
@@ -75,6 +78,7 @@ Window {
     function seekTo(ms) {
         if (hasPlayback) videoLoader.item.seek(ms)
         else if (typeof preview !== "undefined" && preview) preview.snap(ms)
+        if (webcamLoader.item) webcamLoader.item.seek(ms) // keep the overlay aligned
     }
 
     // Start playback from the trim-in point when the head is outside the trimmed
@@ -83,10 +87,17 @@ Window {
         if (!videoLoader.item) return
         if (!videoLoader.item.isPlaying) {
             var pos = videoLoader.item.positionMs
-            if (pos < trimInMs || pos >= trimOutMs - 20)
+            if (pos < trimInMs || pos >= trimOutMs - 20) {
                 videoLoader.item.seek(trimInMs)
+                if (webcamLoader.item) webcamLoader.item.seek(trimInMs)
+            }
         }
         videoLoader.item.togglePlay()
+        // Match the overlay's play state to the main player.
+        if (webcamLoader.item) {
+            if (videoLoader.item.isPlaying) webcamLoader.item.play()
+            else webcamLoader.item.pause()
+        }
     }
 
     // Re-anchor the smoothing clock whenever the player reports a new position or
@@ -102,6 +113,7 @@ Window {
                     && pos >= editorWindow.trimOutMs) {
                 videoLoader.item.pause()
                 videoLoader.item.seek(editorWindow.trimOutMs)
+                if (webcamLoader.item) webcamLoader.item.pause()
                 preview.sync(editorWindow.trimOutMs, false)
                 return
             }
@@ -296,6 +308,9 @@ Window {
                 timeMs: (typeof preview !== "undefined" && preview) ? preview.timeMs : 0
                 // Feeds the "desktopBlur" background (poster of the first frame).
                 posterSource: editorWindow.posterSource
+                // A webcam feed is present only when one was recorded, the module
+                // is available, and the style enables it.
+                webcamHasFeed: webcamLoader.item !== null
             }
 
             // Live video (only when QtMultimedia is present) parented into the
@@ -306,6 +321,18 @@ Window {
                 anchors.fill: parent
                 active: Studio.capVideoPlayback && editorWindow.videoPath !== ""
                 sourceComponent: PreviewVideo { source: editorWindow.videoUrl }
+            }
+
+            // Webcam overlay feed parented into the composition's webcam slot.
+            // Its position follows the main player (coarse sync on each update);
+            // play/pause is driven by the same transport.
+            Loader {
+                id: webcamLoader
+                parent: comp.webcamSlot
+                anchors.fill: parent
+                active: Studio.capVideoPlayback && editorWindow.webcamUrl !== ""
+                        && editorProject && editorProject.style.webcamEnabled
+                sourceComponent: PreviewVideo { source: editorWindow.webcamUrl }
             }
 
             // Poster-frame fallback (no QtMultimedia). posterSource is filled by

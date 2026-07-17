@@ -147,6 +147,39 @@ void StyleModel::setRippleColor(const QColor &v)
     emit changed();
 }
 
+void StyleModel::setWebcamEnabled(bool v)
+{
+    if (m_webcamEnabled == v) return;
+    m_webcamEnabled = v;
+    emit webcamEnabledChanged();
+    emit changed();
+}
+
+void StyleModel::setWebcamPosition(const QString &v)
+{
+    if (m_webcamPosition == v) return;
+    m_webcamPosition = v;
+    emit webcamPositionChanged();
+    emit changed();
+}
+
+void StyleModel::setWebcamSizePct(double v)
+{
+    v = qBound(8.0, v, 40.0);
+    if (qFuzzyCompare(m_webcamSizePct, v)) return;
+    m_webcamSizePct = v;
+    emit webcamSizePctChanged();
+    emit changed();
+}
+
+void StyleModel::setWebcamRounded(bool v)
+{
+    if (m_webcamRounded == v) return;
+    m_webcamRounded = v;
+    emit webcamRoundedChanged();
+    emit changed();
+}
+
 QJsonObject StyleModel::toJson() const
 {
     return QJsonObject{
@@ -167,6 +200,10 @@ QJsonObject StyleModel::toJson() const
         {QStringLiteral("cursorStyle"), m_cursorStyle},
         {QStringLiteral("clickRipple"), m_clickRipple},
         {QStringLiteral("rippleColor"), m_rippleColor.name(QColor::HexArgb)},
+        {QStringLiteral("webcamEnabled"), m_webcamEnabled},
+        {QStringLiteral("webcamPosition"), m_webcamPosition},
+        {QStringLiteral("webcamSizePct"), m_webcamSizePct},
+        {QStringLiteral("webcamRounded"), m_webcamRounded},
     };
 }
 
@@ -197,4 +234,8 @@ void StyleModel::fromJson(const QJsonObject &o)
     setCursorStyle(o.value(QStringLiteral("cursorStyle")).toString(m_cursorStyle));
     setClickRipple(o.value(QStringLiteral("clickRipple")).toBool(m_clickRipple));
     setRippleColor(color(o.value(QStringLiteral("rippleColor")), m_rippleColor));
+    setWebcamEnabled(o.value(QStringLiteral("webcamEnabled")).toBool(m_webcamEnabled));
+    setWebcamPosition(o.value(QStringLiteral("webcamPosition")).toString(m_webcamPosition));
+    setWebcamSizePct(o.value(QStringLiteral("webcamSizePct")).toDouble(m_webcamSizePct));
+    setWebcamRounded(o.value(QStringLiteral("webcamRounded")).toBool(m_webcamRounded));
 }

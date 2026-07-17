@@ -39,6 +39,13 @@ class StyleModel : public QObject
     Q_PROPERTY(bool clickRipple READ clickRipple WRITE setClickRipple NOTIFY clickRippleChanged)
     Q_PROPERTY(QColor rippleColor READ rippleColor WRITE setRippleColor NOTIFY rippleColorChanged)
 
+    // --- webcam overlay (optional; only shown when the recording captured one) ---
+    Q_PROPERTY(bool webcamEnabled READ webcamEnabled WRITE setWebcamEnabled NOTIFY webcamEnabledChanged)
+    // bottomRight | bottomLeft | topRight | topLeft
+    Q_PROPERTY(QString webcamPosition READ webcamPosition WRITE setWebcamPosition NOTIFY webcamPositionChanged)
+    Q_PROPERTY(double webcamSizePct READ webcamSizePct WRITE setWebcamSizePct NOTIFY webcamSizePctChanged)
+    Q_PROPERTY(bool webcamRounded READ webcamRounded WRITE setWebcamRounded NOTIFY webcamRoundedChanged)
+
 public:
     explicit StyleModel(QObject *parent = nullptr);
 
@@ -59,6 +66,10 @@ public:
     QString cursorStyle() const { return m_cursorStyle; }
     bool clickRipple() const { return m_clickRipple; }
     QColor rippleColor() const { return m_rippleColor; }
+    bool webcamEnabled() const { return m_webcamEnabled; }
+    QString webcamPosition() const { return m_webcamPosition; }
+    double webcamSizePct() const { return m_webcamSizePct; }
+    bool webcamRounded() const { return m_webcamRounded; }
 
     void setBackgroundType(const QString &v);
     void setBackgroundColor(const QColor &v);
@@ -77,6 +88,10 @@ public:
     void setCursorStyle(const QString &v);
     void setClickRipple(bool v);
     void setRippleColor(const QColor &v);
+    void setWebcamEnabled(bool v);
+    void setWebcamPosition(const QString &v);
+    void setWebcamSizePct(double v);
+    void setWebcamRounded(bool v);
 
     QJsonObject toJson() const;
     void fromJson(const QJsonObject &o);
@@ -99,6 +114,10 @@ signals:
     void cursorStyleChanged();
     void clickRippleChanged();
     void rippleColorChanged();
+    void webcamEnabledChanged();
+    void webcamPositionChanged();
+    void webcamSizePctChanged();
+    void webcamRoundedChanged();
 
     // Fired by every setter after its own NOTIFY — the single hook dirty
     // tracking listens on.
@@ -122,4 +141,8 @@ private:
     QString m_cursorStyle = QStringLiteral("system");
     bool m_clickRipple = true;
     QColor m_rippleColor = QColor(0xC8, 0xAC, 0xD6);        // Accent
+    bool m_webcamEnabled = false;
+    QString m_webcamPosition = QStringLiteral("bottomRight");
+    double m_webcamSizePct = 20.0;   // clamped [8, 40] (fraction of canvas width)
+    bool m_webcamRounded = true;
 };

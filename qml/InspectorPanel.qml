@@ -40,6 +40,11 @@ Rectangle {
     // Index maps between the model's string enums and the combo rows.
     readonly property var _bgTypes: ["color", "gradient", "wallpaper", "desktopBlur"]
     readonly property var _frames: ["none", "minimal", "titlebar"]
+    readonly property var _webcamPositions: ["bottomRight", "bottomLeft", "topRight", "topLeft"]
+
+    // Whether the loaded project actually recorded a webcam sidecar.
+    readonly property bool hasWebcam: (typeof editorProject !== "undefined" && editorProject)
+                                      ? editorProject.hasWebcam : false
 
     // Curated gradient presets (pure colour pairs — NO binary assets). First is
     // the kit Primary→Tertiary default. Clicking a swatch sets both stops.
@@ -504,6 +509,78 @@ Rectangle {
                             placeholder: qsTr("Window title")
                             text: sm ? sm.frameTitle : ""
                             onEdited: (t) => { if (sm) sm.frameTitle = t }
+                        }
+                    }
+                }
+            }
+
+            // ---- Webcam ----
+            UCard {
+                width: parent.width
+                Column {
+                    width: parent.width
+                    spacing: Theme.spacingM
+                    Text {
+                        text: qsTr("Webcam")
+                        color: Theme.textPrimary
+                        font.pixelSize: Theme.fontM
+                        font.weight: Font.DemiBold
+                    }
+                    // No sidecar recorded → explain how to get one.
+                    Text {
+                        visible: !panel.hasWebcam
+                        width: parent.width
+                        wrapMode: Text.WordWrap
+                        text: qsTr("This project has no webcam recording. Enable “Record webcam” in Settings before recording.")
+                        color: Theme.textTertiary
+                        font.pixelSize: Theme.fontS
+                    }
+                    Row {
+                        visible: panel.hasWebcam
+                        width: parent.width
+                        Text {
+                            text: qsTr("Show webcam")
+                            color: Theme.textSecondary
+                            font.pixelSize: Theme.fontS
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: parent.width - wcSwitch.width
+                            elide: Text.ElideRight
+                        }
+                        USwitch {
+                            id: wcSwitch
+                            checked: sm ? sm.webcamEnabled : false
+                            onToggled: (c) => { if (sm) sm.webcamEnabled = c }
+                        }
+                    }
+                    LabeledCombo {
+                        visible: panel.hasWebcam && sm && sm.webcamEnabled
+                        label: qsTr("Position")
+                        model: [qsTr("Bottom right"), qsTr("Bottom left"), qsTr("Top right"), qsTr("Top left")]
+                        currentIndex: sm ? Math.max(0, panel._webcamPositions.indexOf(sm.webcamPosition)) : 0
+                        onActivated: (i) => { if (sm) sm.webcamPosition = panel._webcamPositions[i] }
+                    }
+                    LabeledSlider {
+                        visible: panel.hasWebcam && sm && sm.webcamEnabled
+                        label: qsTr("Size")
+                        from: 8; to: 40; suffix: "%"
+                        value: sm ? sm.webcamSizePct : 20
+                        onMoved: (v) => { if (sm) sm.webcamSizePct = v }
+                    }
+                    Row {
+                        visible: panel.hasWebcam && sm && sm.webcamEnabled
+                        width: parent.width
+                        Text {
+                            text: qsTr("Circle")
+                            color: Theme.textSecondary
+                            font.pixelSize: Theme.fontS
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: parent.width - roundSwitch.width
+                            elide: Text.ElideRight
+                        }
+                        USwitch {
+                            id: roundSwitch
+                            checked: sm ? sm.webcamRounded : true
+                            onToggled: (c) => { if (sm) sm.webcamRounded = c }
                         }
                     }
                 }
