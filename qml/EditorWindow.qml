@@ -58,6 +58,13 @@ Window {
                                   : (editorProject ? editorProject.durationMs : 0)
     readonly property bool hasPlayback: Studio.capVideoPlayback && videoLoader.item !== null
 
+    // Trim range (mirrors the Timeline's effOut fallback). Preview playback is
+    // confined to [trimInMs, trimOutMs]: play jumps into range, and the head
+    // auto-pauses at the out point. Scrubbing anywhere stays free.
+    readonly property int trimInMs: editorProject ? editorProject.trimInMs : 0
+    readonly property int trimOutMs: (editorProject && editorProject.trimOutMs > trimInMs)
+                                     ? editorProject.trimOutMs : curDur
+
     // The selected zoom keyframe (drives the inspector's keyframe section and the
     // timeline highlight); -1 == none. Row indices shift when keyframes are
     // added/removed, so a count change clears the selection.
@@ -70,12 +77,36 @@ Window {
         else if (typeof preview !== "undefined" && preview) preview.snap(ms)
     }
 
+    // Start playback from the trim-in point when the head is outside the trimmed
+    // range, then toggle. Keeps the preview confined to the exported span.
+    function playPause() {
+        if (!videoLoader.item) return
+        if (!videoLoader.item.isPlaying) {
+            var pos = videoLoader.item.positionMs
+            if (pos < trimInMs || pos >= trimOutMs - 20)
+                videoLoader.item.seek(trimInMs)
+        }
+        videoLoader.item.togglePlay()
+    }
+
     // Re-anchor the smoothing clock whenever the player reports a new position or
     // toggles play/pause; the clock interpolates between these coarse updates.
+    // While playing, auto-pause at the trim-out point so the preview matches the
+    // exported range.
     Connections {
         target: videoLoader.item
         ignoreUnknownSignals: true
-        function onPositionMsChanged() { preview.sync(videoLoader.item.positionMs, videoLoader.item.isPlaying) }
+        function onPositionMsChanged() {
+            var pos = videoLoader.item.positionMs
+            if (videoLoader.item.isPlaying && editorWindow.trimOutMs > 0
+                    && pos >= editorWindow.trimOutMs) {
+                videoLoader.item.pause()
+                videoLoader.item.seek(editorWindow.trimOutMs)
+                preview.sync(editorWindow.trimOutMs, false)
+                return
+            }
+            preview.sync(pos, videoLoader.item.isPlaying)
+        }
         function onIsPlayingChanged() { preview.sync(videoLoader.item.positionMs, videoLoader.item.isPlaying) }
     }
 
@@ -379,7 +410,7 @@ Window {
                 iconName: (videoLoader.item && videoLoader.item.isPlaying)
                           ? "media-playback-pause" : "media-playback-start"
                 tooltip: qsTr("Play / pause")
-                onClicked: if (videoLoader.item) videoLoader.item.togglePlay()
+                onClicked: editorWindow.playPause()
             }
 
             USlider {
@@ -400,7 +431,14 @@ Window {
                 id: timeLabel
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
+                // When trimmed, append the exported clip length so the range is
+                // legible without reading the timeline handles.
+                readonly property bool trimmed: editorWindow.trimInMs > 0
+                    || editorWindow.trimOutMs < editorWindow.curDur
                 text: editorWindow.mmss(editorWindow.curPos) + " / " + editorWindow.mmss(editorWindow.curDur)
+                      + (trimmed ? "  ·  " + qsTr("clip %1").arg(
+                                       editorWindow.mmss(editorWindow.trimOutMs - editorWindow.trimInMs))
+                                 : "")
                 color: Theme.textSecondary
                 font.pixelSize: Theme.fontS
             }

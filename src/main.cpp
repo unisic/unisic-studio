@@ -275,7 +275,16 @@ int main(int argc, char *argv[])
             const int bi = args.indexOf(QStringLiteral("--bg"));
             if (bi >= 0 && bi + 1 < args.size())
                 bg = args.at(bi + 1);
-            QTimer::singleShot(0, &app, [in, out, cancelMs, fmt, bg] {
+            // Optional: `--trim-in <ms>` / `--trim-out <ms>` exercise the trim
+            // path (preview clamp shares the same range; export uses -ss/-t).
+            qint64 trimIn = -1, trimOut = -1;
+            const int tii = args.indexOf(QStringLiteral("--trim-in"));
+            if (tii >= 0 && tii + 1 < args.size())
+                trimIn = args.at(tii + 1).toLongLong();
+            const int toi = args.indexOf(QStringLiteral("--trim-out"));
+            if (toi >= 0 && toi + 1 < args.size())
+                trimOut = args.at(toi + 1).toLongLong();
+            QTimer::singleShot(0, &app, [in, out, cancelMs, fmt, bg, trimIn, trimOut] {
                 auto *probe = new VideoProbe(qApp);
                 QObject::connect(probe, &VideoProbe::failed, qApp, [](const QString &r) {
                     fprintf(stderr, "export-test: probe failed: %s\n", qPrintable(r));
@@ -284,12 +293,17 @@ int main(int argc, char *argv[])
                 });
                 QObject::connect(
                     probe, &VideoProbe::probed, qApp,
-                    [in, out, cancelMs, fmt, bg](qint64 durationMs, double fps, const QSize &size) {
+                    [in, out, cancelMs, fmt, bg, trimIn, trimOut](qint64 durationMs, double fps,
+                                                                  const QSize &size) {
                         auto *p = new StudioProject(qApp);
                         p->setVideoAbsPath(in);
                         p->setDurationMs(durationMs);
                         p->setFps(fps);
                         p->setVideoSize(size);
+                        if (trimIn >= 0)
+                            p->setTrimInMs(trimIn);
+                        if (trimOut >= 0)
+                            p->setTrimOutMs(trimOut);
                         // A clearly non-default style so the pixel check can prove
                         // the composition (not the raw video) was rendered.
                         StyleModel *st = p->style();

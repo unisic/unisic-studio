@@ -227,7 +227,7 @@ Rectangle {
             }
         }
 
-        // Trim handles.
+        // Trim handles (with a time readout below each when trimmed).
         Rectangle {
             id: trimIn
             width: 8; radius: 3
@@ -242,6 +242,15 @@ Rectangle {
                     var v = Math.round(timeline.msForX(trimIn.x + width / 2 + m.x))
                     timeline.project.trimInMs = Math.min(v, timeline.effOutMs - 100)
                 }
+            }
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.top: parent.bottom
+                anchors.topMargin: 1
+                visible: timeline.project && timeline.project.trimInMs > 0
+                text: timeline.mmss(timeline.project ? timeline.project.trimInMs : 0)
+                color: Theme.accent
+                font.pixelSize: 9
             }
         }
         Rectangle {
@@ -258,6 +267,15 @@ Rectangle {
                     var v = Math.round(timeline.msForX(trimOut.x + width / 2 + m.x))
                     timeline.project.trimOutMs = Math.max(v, (timeline.project.trimInMs || 0) + 100)
                 }
+            }
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.top: parent.bottom
+                anchors.topMargin: 1
+                visible: timeline.effOutMs < timeline.durationMs
+                text: timeline.mmss(timeline.effOutMs)
+                color: Theme.accent
+                font.pixelSize: 9
             }
         }
 
