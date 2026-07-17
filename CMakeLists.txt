@@ -89,6 +89,7 @@ qt_add_executable(unisic-studio
     src/engine/Easing.h
     src/engine/CursorSmoother.h src/engine/CursorSmoother.cpp
     src/engine/KeyframeEngine.h src/engine/KeyframeEngine.cpp
+    src/engine/TrajectoryMetrics.h src/engine/TrajectoryMetrics.cpp
     # Preview head + cursor overlay (M3). PreviewController smooths time and
     # evaluates the camera/cursor for the live editor; CursorPlayback samples the
     # cursor + click ripples for a given time; CursorShapeProvider serves the
@@ -98,6 +99,7 @@ qt_add_executable(unisic-studio
     src/render/CursorShapeProvider.h src/render/CursorShapeProvider.cpp
     # Hidden dev aid: end-to-end auto-zoom + overlay export self-test (--autozoom-test).
     src/AutozoomSelfTest.h src/AutozoomSelfTest.cpp
+    src/MotionSelfTest.h src/MotionSelfTest.cpp
 )
 
 # qt_standard_project_setup bakes an $ORIGIN install-RPATH into the binary;
@@ -321,6 +323,33 @@ if(BUILD_TESTING)
     target_link_libraries(studio_cursor_playback_test PRIVATE Qt6::Core Qt6::Gui Qt6::Test)
     target_include_directories(studio_cursor_playback_test PRIVATE src src/project src/engine)
     add_test(NAME studio_cursor_playback_test COMMAND studio_cursor_playback_test)
+
+    qt_add_executable(studio_trajectory_metrics_test
+        tests/TrajectoryMetricsTest.cpp
+        src/engine/TrajectoryMetrics.h src/engine/TrajectoryMetrics.cpp)
+    target_link_libraries(studio_trajectory_metrics_test PRIVATE Qt6::Core Qt6::Gui Qt6::Test)
+    target_include_directories(studio_trajectory_metrics_test PRIVATE src/engine)
+    add_test(NAME studio_trajectory_metrics_test COMMAND studio_trajectory_metrics_test)
+
+    qt_add_executable(studio_preview_controller_test
+        tests/PreviewControllerTest.cpp
+        src/PreviewController.h src/PreviewController.cpp
+        src/CursorPlayback.h src/CursorPlayback.cpp
+        src/engine/CursorSmoother.h src/engine/CursorSmoother.cpp
+        src/engine/KeyframeEngine.h src/engine/KeyframeEngine.cpp
+        src/project/CursorTrack.h src/project/CursorTrack.cpp
+        src/project/ClickTrack.h src/project/ClickTrack.cpp
+        src/project/ZoomTimeline.h src/project/ZoomTimeline.cpp
+        src/project/StyleModel.h src/project/StyleModel.cpp
+        src/project/StudioProject.h src/project/StudioProject.cpp
+        src/render/CursorShapeProvider.h src/render/CursorShapeProvider.cpp)
+    target_link_libraries(studio_preview_controller_test PRIVATE
+        Qt6::Core Qt6::Gui Qt6::Quick Qt6::Test)
+    set_target_properties(studio_preview_controller_test PROPERTIES
+        QT_QML_MODULE_NO_IMPORT_SCAN TRUE)
+    target_include_directories(studio_preview_controller_test PRIVATE
+        src src/engine src/project src/render)
+    add_test(NAME studio_preview_controller_test COMMAND studio_preview_controller_test)
 endif()
 
 install(TARGETS unisic-studio RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

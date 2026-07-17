@@ -2,6 +2,7 @@
 #include <QAbstractListModel>
 #include <QHash>
 #include <QObject>
+#include <QPointF>
 #include <QSize>
 #include <QString>
 #include <QVector>
@@ -43,10 +44,10 @@ private:
 
 // Drives the cursor overlay: given a video-ms time, exposes the pointer's
 // normalised position / visibility / current shape bitmap and the active click
-// ripples. Pure playback state — it holds COPIES of the tracks (decoupled from
-// the live editable project) and never mutates them. The cursor lookup caches
-// the last sample index for O(1) sequential advance, and the steady path reuses
-// its scratch buffers, so ticking it every frame allocates nothing.
+// ripples. The rendered position follows the one-euro-smoothed recording through
+// its own soft spring. Fixed 5 ms simulation + 500 ms checkpoints make seeking,
+// looping, preview and export deterministic. Pure playback state — it holds
+// COPIES of the tracks and never mutates project metadata.
 //
 // Shape bitmaps are served through image://cursorshape/<projectId>/<shapeId>;
 // this class only formats those URLs and reports each shape's pixel size +
@@ -59,6 +60,7 @@ class CursorPlayback : public QObject
 
     Q_PROPERTY(qreal timeMs READ timeMs NOTIFY timeChanged)
     Q_PROPERTY(bool cursorVisible READ cursorVisible NOTIFY sampleChanged)
+    Q_PROPERTY(qreal cursorOpacity READ cursorOpacity NOTIFY sampleChanged)
     Q_PROPERTY(qreal nx READ nx NOTIFY sampleChanged)
     Q_PROPERTY(qreal ny READ ny NOTIFY sampleChanged)
     Q_PROPERTY(QString shapeUrl READ shapeUrl NOTIFY shapeChanged)
@@ -66,10 +68,10 @@ class CursorPlayback : public QObject
     Q_PROPERTY(int shapeHeight READ shapeHeight NOTIFY shapeChanged)
     Q_PROPERTY(qreal hotspotX READ hotspotX NOTIFY shapeChanged)
     Q_PROPERTY(qreal hotspotY READ hotspotY NOTIFY shapeChanged)
-    // Milliseconds since the most recent click at/or-before the current time, or
-    // -1 if none yet. A pure function of time (like the ripples), so the cursor
-    // 'press' feedback it drives is identical in preview and export.
+    // Milliseconds since an active recent click, or -1 outside the 440 ms effect
+    // window. Capping it prevents idle NOTIFY traffic after feedback has settled.
     Q_PROPERTY(qreal msSinceClick READ msSinceClick NOTIFY sampleChanged)
+    Q_PROPERTY(qreal pressScale READ pressScale NOTIFY sampleChanged)
     Q_PROPERTY(int rippleMs READ rippleMs CONSTANT)
     Q_PROPERTY(QAbstractListModel *ripples READ ripples CONSTANT)
 
@@ -90,6 +92,7 @@ public:
 
     qreal timeMs() const { return m_timeMs; }
     bool cursorVisible() const { return m_visible; }
+    qreal cursorOpacity() const { return m_opacity; }
     qreal nx() const { return m_nx; }
     qreal ny() const { return m_ny; }
     QString shapeUrl() const { return m_shapeUrl; }
@@ -98,6 +101,7 @@ public:
     qreal hotspotX() const { return m_hotspotX; }
     qreal hotspotY() const { return m_hotspotY; }
     qreal msSinceClick() const { return m_msSinceClick; }
+    qreal pressScale() const { return m_pressScale; }
     int rippleMs() const { return kRippleMs; }
     QAbstractListModel *ripples() const;
 
@@ -110,12 +114,39 @@ signals:
 
 private:
     void applyShape(int shapeId);
+    void resetSpring();
 
-    static constexpr int kRippleMs = 420;
+    struct SpringState {
+        qint64 timeUs = 0;
+        QPointF position = QPointF(0.5, 0.5);
+        QPointF velocity;
+        int sampleHint = 0;
+    };
+    struct MotionRun {
+        qint64 startMs = 0;
+        qint64 endMs = 0;
+    };
+
+    QPointF targetAt(qint64 timeUs, int *sampleHint) const;
+    void advanceSpring(SpringState *state, qint64 destinationUs) const;
+    SpringState springStateFor(qint64 timeUs);
+    QPointF renderedPositionAt(qint64 timeMs);
+    void buildMotionRuns();
+    qreal opacityAt(qint64 timeMs, bool recordedVisible) const;
+    static qreal pressScaleAt(qreal msSinceClick);
+
+    static constexpr int kRippleMs = 440;
+    static constexpr int kSpringStepMs = 5;
+    static constexpr int kCheckpointMs = 500;
+    static constexpr int kIdleDelayMs = 2000;
+    static constexpr int kIdleFadeMs = 300;
+    static constexpr int kWakeFadeMs = 140;
 
     QString m_projectId;
     CursorTrack m_cursor;
     QVector<ClickEvent> m_downs;        // down events only, sorted by tMs
+    QVector<QPointF> m_downPositions;   // rendered spring position at click time
+    QVector<MotionRun> m_motionRuns;
 
     struct ShapeInfo {
         int w = 0;
@@ -130,6 +161,7 @@ private:
 
     qreal m_timeMs = 0.0;
     bool m_visible = false;
+    qreal m_opacity = 0.0;
     qreal m_nx = 0.5;
     qreal m_ny = 0.5;
     int m_shapeId = -2;                 // -2 == "never applied", forces first emit
@@ -139,10 +171,15 @@ private:
     qreal m_hotspotX = 0.0;
     qreal m_hotspotY = 0.0;
     qreal m_msSinceClick = -1.0;        // for the cursor 'press' feedback
+    qreal m_pressScale = 1.0;
 
     mutable int m_lastIdx = 0;          // cursor-sample lookup hint
     int m_downCursor = 0;               // ripple-scan hint
     qint64 m_prevT = -1;                // detect backward seeks
+
+    SpringState m_springInitial;
+    SpringState m_springForward;
+    QVector<SpringState> m_springCheckpoints;
 
     CursorRippleModel *m_ripples;
     QVector<CursorRippleModel::Ripple> m_activeScratch; // reused each setTime

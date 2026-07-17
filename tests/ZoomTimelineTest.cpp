@@ -11,6 +11,8 @@ private slots:
     void addKeyframeInsertsSorted();
     void moveKeyframeReSorts();
     void clearAutoSparesLockedAndManual();
+    void replaceAutoUsesSingleReset();
+    void motionPropertiesClampAndNotify();
     void jsonRoundtrip();
 };
 
@@ -68,6 +70,24 @@ void ZoomTimelineTest::clearAutoSparesLockedAndManual()
     QCOMPARE(z.keyframes().at(1).tMs, qint64(300));
 }
 
+void ZoomTimelineTest::replaceAutoUsesSingleReset()
+{
+    ZoomTimeline timeline;
+    timeline.addKeyframe(kf(100, ZoomTimeline::Auto, false));
+    timeline.addKeyframe(kf(200, ZoomTimeline::Auto, true));
+    timeline.addKeyframe(kf(300, ZoomTimeline::Manual, false));
+    QSignalSpy resetSpy(&timeline, &QAbstractItemModel::modelReset);
+    QSignalSpy changedSpy(&timeline, &ZoomTimeline::changed);
+
+    timeline.replaceAutoKeyframes({kf(400, ZoomTimeline::Auto, false),
+                                   kf(500, ZoomTimeline::Auto, false)});
+    QCOMPARE(resetSpy.count(), 1);
+    QCOMPARE(changedSpy.count(), 1);
+    QCOMPARE(timeline.rowCount(), 4);
+    QCOMPARE(timeline.keyframes().at(0).tMs, qint64(200)); // locked Auto survived
+    QCOMPARE(timeline.keyframes().at(1).tMs, qint64(300)); // Manual survived
+}
+
 void ZoomTimelineTest::jsonRoundtrip()
 {
     ZoomTimeline z;
@@ -78,7 +98,9 @@ void ZoomTimelineTest::jsonRoundtrip()
     z.addKeyframe(a);
     z.addKeyframe(kf(500, ZoomTimeline::Manual, false));
     z.setAutoParams(QJsonObject{{QStringLiteral("strength"), 1.5},
-                                {QStringLiteral("dwellMs"), 800}});
+                                {QStringLiteral("dwellMs"), 800},
+                                {QStringLiteral("zoomIntensity"), 0.42},
+                                {QStringLiteral("motionSmoothness"), 0.81}});
 
     ZoomTimeline r;
     r.fromJson(z.toJson());
@@ -92,6 +114,30 @@ void ZoomTimelineTest::jsonRoundtrip()
     QCOMPARE(b.locked, true);
     QCOMPARE(r.keyframes().at(1).source, ZoomTimeline::Manual);
     QCOMPARE(r.autoParams().value(QStringLiteral("dwellMs")).toInt(), 800);
+    QCOMPARE(r.zoomIntensity(), 0.42);
+    QCOMPARE(r.motionSmoothness(), 0.81);
+}
+
+void ZoomTimelineTest::motionPropertiesClampAndNotify()
+{
+    ZoomTimeline z;
+    QCOMPARE(z.zoomIntensity(), ZoomTimeline::DefaultZoomIntensity);
+    QCOMPARE(z.motionSmoothness(), ZoomTimeline::DefaultMotionSmoothness);
+
+    QSignalSpy intensitySpy(&z, &ZoomTimeline::zoomIntensityChanged);
+    QSignalSpy smoothnessSpy(&z, &ZoomTimeline::motionSmoothnessChanged);
+    QSignalSpy changedSpy(&z, &ZoomTimeline::changed);
+    z.setZoomIntensity(-3.0);
+    z.setMotionSmoothness(4.0);
+    QCOMPARE(z.zoomIntensity(), 0.0);
+    QCOMPARE(z.motionSmoothness(), 1.0);
+    QCOMPARE(intensitySpy.count(), 1);
+    QCOMPARE(smoothnessSpy.count(), 1);
+    QCOMPARE(changedSpy.count(), 2);
+
+    z.setZoomIntensity(0.0);
+    z.setMotionSmoothness(1.0);
+    QCOMPARE(changedSpy.count(), 2); // no duplicate mutation pulses
 }
 
 QTEST_GUILESS_MAIN(ZoomTimelineTest)

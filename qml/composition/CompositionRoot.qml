@@ -5,7 +5,7 @@ import QtQuick.Effects
 // implementation is shared by the live editor preview AND (next milestone) the
 // offscreen QQuickRenderControl export renderer, so it is RIGOROUSLY
 // self-contained: every input arrives through a property (a StyleModel, a source
-// videoSize, a timeMs, a normalized zoomRect) and the consumer parents the
+// videoSize and a normalized zoomRect) and the consumer parents the
 // actual video Item into `videoSlot`. NO Window references, NO app singletons,
 // NO Theme import — an offscreen render context with no app can instantiate it.
 //
@@ -18,7 +18,6 @@ Item {
     // ---- Inputs (the ONLY inputs) ------------------------------------------
     property var  styleModel: null                 // C++ StyleModel*
     property size videoSize: Qt.size(1920, 1080)   // source pixel size
-    property real timeMs: 0                         // current playback/render instant
     // Normalized camera viewport in [0,1]; default = whole frame (identity). The
     // zoom/pan engine drives this (preview: PreviewController.zoomRect; export:
     // per-frame from KeyframeEngine::evaluate).
@@ -41,16 +40,16 @@ Item {
     readonly property alias videoSlot: videoZoom
 
     // ---- Style accessors (safe fallbacks while styleModel is null) ----------
-    readonly property string _bgType:        styleModel ? styleModel.backgroundType : "color"
+    readonly property string _bgType:        styleModel ? styleModel.backgroundType : "gradient"
     readonly property color  _bgColor:       styleModel ? styleModel.backgroundColor : "#17153B"
     readonly property color  _gradA:         styleModel ? styleModel.gradientStart : "#17153B"
-    readonly property color  _gradB:         styleModel ? styleModel.gradientEnd : "#433D8B"
+    readonly property color  _gradB:         styleModel ? styleModel.gradientEnd : "#2E236C"
     readonly property string _wallpaper:     styleModel ? styleModel.wallpaperPath : ""
-    readonly property real   _paddingPct:    styleModel ? styleModel.paddingPct : 8
-    readonly property int    _corner:        styleModel ? styleModel.cornerRadius : 12
-    readonly property int    _shadowBlur:    styleModel ? styleModel.shadowBlur : 48
-    readonly property real   _shadowOpacity: styleModel ? styleModel.shadowOpacity : 0.35
-    readonly property int    _shadowOffsetY: styleModel ? styleModel.shadowOffsetY : 10
+    readonly property real   _paddingPct:    styleModel ? styleModel.paddingPct : 10.5
+    readonly property int    _corner:        styleModel ? styleModel.cornerRadius : 16
+    readonly property int    _shadowBlur:    styleModel ? styleModel.shadowBlur : 56
+    readonly property real   _shadowOpacity: styleModel ? styleModel.shadowOpacity : 0.30
+    readonly property int    _shadowOffsetY: styleModel ? styleModel.shadowOffsetY : 12
     readonly property string _frame:         styleModel ? styleModel.frameStyle : "none"
     readonly property string _frameTitle:    styleModel ? styleModel.frameTitle : ""
     readonly property bool   _hasPoster:     root.posterSource !== ""
@@ -102,6 +101,9 @@ Item {
             return Qt.rect((1 - _cropW) / 2, (1 - _cropH) / 2, _cropW, _cropH)
         return zoomRect
     }
+    readonly property real _baseCameraW: _fill ? _cropW : 1.0
+    readonly property real _cameraZoom: Math.max(1, _baseCameraW
+                                                    / Math.max(0.0001, _effZoom.width))
     // Composition canvas: the styled frame, aspect-fit (contain) inside root.
     readonly property real canvasW: (root.width / Math.max(1, root.height)) > _aspect
                                     ? root.height * _aspect : root.width
@@ -305,6 +307,8 @@ Item {
                         cursorData: root.cursorPlayback
                         styleModel: root.styleModel
                         videoSize: root.videoSize
+                        cameraRect: root._effZoom
+                        cameraZoom: root._cameraZoom
                     }
                 }
             }

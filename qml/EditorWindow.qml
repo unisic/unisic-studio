@@ -134,8 +134,11 @@ Window {
     // One seek entry point: with live playback it moves the player (whose
     // position feeds preview.sync); without it, it snaps the preview clock.
     function seekTo(ms) {
+        if (typeof preview !== "undefined" && preview) {
+            if (hasPlayback) preview.sync(ms, videoLoader.item.isPlaying)
+            else preview.snap(ms)
+        }
         if (hasPlayback) videoLoader.item.seek(ms)
-        else if (typeof preview !== "undefined" && preview) preview.snap(ms)
         if (webcamLoader.item) webcamLoader.item.seek(ms) // keep the overlay aligned
     }
 
@@ -178,6 +181,20 @@ Window {
             preview.sync(pos, videoLoader.item.isPlaying)
         }
         function onIsPlayingChanged() { preview.sync(videoLoader.item.positionMs, videoLoader.item.isPlaying) }
+    }
+    Connections {
+        target: (typeof preview !== "undefined") ? preview : null
+        ignoreUnknownSignals: true
+        function onPlaybackRangeEnded() {
+            if (videoLoader.item) {
+                videoLoader.item.pause()
+                videoLoader.item.seek(editorWindow.trimOutMs)
+            }
+            if (webcamLoader.item) {
+                webcamLoader.item.pause()
+                webcamLoader.item.seek(editorWindow.trimOutMs)
+            }
+        }
     }
 
     // Keyframe row indices are unstable across add/remove — drop the selection.
@@ -436,7 +453,6 @@ Window {
                 zoomRect: (typeof preview !== "undefined" && preview) ? preview.zoomRect
                                                                       : Qt.rect(0, 0, 1, 1)
                 cursorPlayback: (typeof preview !== "undefined" && preview) ? preview.cursor : null
-                timeMs: (typeof preview !== "undefined" && preview) ? preview.timeMs : 0
                 // Feeds the "desktopBlur" background (poster of the first frame).
                 posterSource: editorWindow.posterSource
                 // A webcam feed is present only when one was recorded, the module
@@ -608,7 +624,7 @@ Window {
                 enabled: editorWindow.hasPlayback
                 from: 0
                 to: Math.max(1, editorWindow.curDur)
-                value: editorWindow.curPos
+                value: editorWindow.headMs
                 onMoved: (v) => editorWindow.seekTo(v)
             }
 
@@ -620,7 +636,7 @@ Window {
                 // legible without reading the timeline handles.
                 readonly property bool trimmed: editorWindow.trimInMs > 0
                     || editorWindow.trimOutMs < editorWindow.curDur
-                text: editorWindow.mmss(editorWindow.curPos) + " / " + editorWindow.mmss(editorWindow.curDur)
+                text: editorWindow.mmss(editorWindow.headMs) + " / " + editorWindow.mmss(editorWindow.curDur)
                       + (trimmed ? "  ·  " + qsTr("clip %1").arg(
                                        editorWindow.mmss(editorWindow.trimOutMs - editorWindow.trimInMs))
                                  : "")

@@ -6,6 +6,7 @@
 #include <QSize>
 #include <QString>
 
+#include "engine/KeyframeEngine.h"
 #include "project/ClickTrack.h"
 #include "project/CursorTrack.h"
 #include "project/ZoomTimeline.h"
@@ -79,9 +80,11 @@ public:
         QString outputPath;
         // --- camera + cursor overlay (M3) ---
         QList<ZoomTimeline::Keyframe> keyframes; // camera timeline snapshot
+        double motionSmoothness = ZoomTimeline::DefaultMotionSmoothness;
         CursorTrack cursor;    // overlay source (copies — decoupled, thread-safe)
         ClickTrack clicks;
         QString projectId;     // keys the image://cursorshape bitmaps
+        bool collectMotionSamples = false; // dev harness only; zero hot-path signals otherwise
     };
 
     explicit RenderPipeline(QObject *parent = nullptr);
@@ -98,6 +101,8 @@ public:
 
 signals:
     void progress(int framesDone, int totalEstimate, qint64 etaMs);
+    void motionSampled(int frameIndex, qint64 timeMs, const QRectF &cameraRect,
+                       const QPointF &cursorPosition, bool cursorVisible);
     void finished();
     void failed(const QString &message);
 
@@ -154,4 +159,5 @@ private:
     QString m_gifFinalTemp;             // paletteuse writes here, then moved to output
     QString m_posterTemp;               // one-shot poster PNG for the desktopBlur bg
     QByteArray m_rowBuf;                // reused row-pack scratch (padded-stride path only)
+    SpringCameraEvaluator m_camera;
 };

@@ -1,146 +1,200 @@
 import QtQuick
 import QtQuick.Effects
 
-// The cursor + click-ripple layer, drawn ON the video and INSIDE the zoom
-// transform (it is a child of CompositionRoot's videoZoom), so it scales and pans
-// with the camera exactly like the footage. The recording was captured in
-// Metadata mode — no baked-in pointer — so without this the cursor is invisible.
-//
-// Self-contained like the rest of the composition: no Theme, no app singletons.
-// Every input arrives through a property. `cursorData` is a CursorPlayback*
-// (normalised position, current shape bitmap, active ripples); `styleModel` is
-// the project StyleModel (cursor style/scale, ripple on/off + colour); videoSize
-// is the source pixel size, used to map recorded stream px -> this item's coords.
+// Cursor and click feedback shared byte-for-byte by preview and export. Position,
+// idle opacity and press response come from CursorPlayback, so all motion is a
+// deterministic function of project time. Art remains inside the camera transform
+// for correct anchoring, but local geometry compensates that transform to keep a
+// readable, nearly constant on-screen size at every zoom level.
 Item {
     id: overlay
 
-    property var cursorData: null       // CursorPlayback*
-    property var styleModel: null       // StyleModel*
+    property var cursorData: null
+    property var styleModel: null
     property size videoSize: Qt.size(1920, 1080)
-    // The overlay's own time (from cursorData) drives ripple phase; exposed so
-    // export's per-frame property writes re-trigger the bindings.
-    readonly property real timeMs: cursorData ? cursorData.timeMs : 0
+    property rect cameraRect: Qt.rect(0, 0, 1, 1)
+    property real cameraZoom: 1
 
-    // Stream px -> local px (before the zoom transform, which is applied by the
-    // parent). videoZoom has the source aspect exactly, so this is uniform.
-    readonly property real _dispScale: videoSize.width > 0 ? width / videoSize.width : 1
+    readonly property real timeMs: cursorData ? cursorData.timeMs : 0
     readonly property real _cursorScale: styleModel ? styleModel.cursorScale : 1
-    readonly property string _style: styleModel ? styleModel.cursorStyle : "system"
+    readonly property string _style: styleModel ? styleModel.cursorStyle : "pointer"
     readonly property color _rippleColor: styleModel ? styleModel.rippleColor : "#C8ACD6"
     readonly property bool _rippleOn: styleModel ? styleModel.clickRipple : true
-
     readonly property real _cursorX: cursorData ? cursorData.nx * width : 0
     readonly property real _cursorY: cursorData ? cursorData.ny * height : 0
     readonly property bool _cursorVisible: cursorData ? cursorData.cursorVisible : false
+    readonly property real _cursorOpacity: cursorData ? cursorData.cursorOpacity : 0
+    readonly property real _pressScale: cursorData ? cursorData.pressScale : 1
 
-    // Subtle 'press' dip: the cursor scales to 0.9 the instant a click lands and
-    // eases back over 120 ms. A pure function of msSinceClick (deterministic in
-    // time), so preview and export dip identically. Only when ripples are enabled.
-    readonly property real _pressScale: {
-        if (!_rippleOn || !cursorData) return 1.0
-        var ms = cursorData.msSinceClick
-        if (ms < 0 || ms >= 120) return 1.0
-        return 0.9 + 0.1 * (ms / 120)
-    }
+    // Full compensation would keep size exactly constant. Retaining 8% of camera
+    // zoom gives subtle emphasis without producing a giant pointer at 2.8x.
+    readonly property real _zoomGrowth: Math.pow(Math.max(1, cameraZoom), 0.08)
+    readonly property real _screenH: Math.max(18, Math.min(width, height) * 0.024)
+                                     * _cursorScale * _zoomGrowth
+    readonly property real _camW: Math.max(0.0001, cameraRect.width)
+    readonly property real _camH: Math.max(0.0001, cameraRect.height)
 
-    // Built-in 'pointer' arrow geometry (SVG authored in a 20x26 box, tip at
-    // (1.5,1.5)). Rasterised at the un-pressed size so a press doesn't re-raster.
-    readonly property real _ptrBaseH: 28 * _dispScale * _cursorScale
-    readonly property real _ptrH: _ptrBaseH * _pressScale
-    readonly property real _ptrW: _ptrH * (20 / 26)
-    readonly property real _ptrHotX: _ptrW * (1.5 / 20)
-    readonly property real _ptrHotY: _ptrH * (1.5 / 26)
+    // Premium pointer SVG: 24x32, hotspot (2,1.5). Width/height are authored in
+    // pre-camera local units; after parent scaling they resolve to _screenH.
+    readonly property real _ptrScreenW: _screenH * (24 / 32)
+    readonly property real _ptrW: _ptrScreenW * _camW * _pressScale
+    readonly property real _ptrH: _screenH * _camH * _pressScale
+    readonly property real _ptrHotX: _ptrW * (2 / 24)
+    readonly property real _ptrHotY: _ptrH * (1.5 / 32)
+    readonly property bool _haveSystemShape: cursorData && cursorData.shapeUrl !== ""
 
-    // ---- Click ripples (deterministic: phase == (time - clickTime)/rippleMs) --
+    // Soft expanding highlight + clean ring. Geometry is camera-compensated, so
+    // both remain circular and equally weighted in the final frame.
     Repeater {
         model: overlay.cursorData ? overlay.cursorData.ripples : null
         delegate: Item {
             required property real nx
             required property real ny
             required property real tMs
-            readonly property real _phase: {
+            readonly property real phase: {
                 if (!overlay.cursorData) return 1
                 var p = (overlay.timeMs - tMs) / overlay.cursorData.rippleMs
-                return p < 0 ? 0 : (p > 1 ? 1 : p)
+                return Math.max(0, Math.min(1, p))
             }
-            visible: overlay._rippleOn && _phase < 1
+            readonly property real eased: 1 - Math.pow(1 - phase, 3)
+            readonly property real screenD: Math.min(overlay.width, overlay.height)
+                                                * (0.018 + 0.075 * eased)
+            readonly property real localW: screenD * overlay._camW
+            readonly property real localH: screenD * overlay._camH
+            visible: overlay._rippleOn && phase < 1
+
             Rectangle {
-                readonly property real _d: overlay.width * (0.02 + 0.07 * parent._phase)
-                x: parent.nx * overlay.width - _d / 2
-                y: parent.ny * overlay.height - _d / 2
-                width: _d
-                height: _d
-                radius: _d / 2
+                x: parent.nx * overlay.width - parent.localW / 2
+                y: parent.ny * overlay.height - parent.localH / 2
+                width: parent.localW
+                height: parent.localH
+                radius: Math.min(width, height) / 2
+                color: overlay._rippleColor
+                opacity: 0.10 * Math.pow(1 - parent.phase, 2)
+            }
+            Rectangle {
+                x: parent.nx * overlay.width - parent.localW / 2
+                y: parent.ny * overlay.height - parent.localH / 2
+                width: parent.localW
+                height: parent.localH
+                radius: Math.min(width, height) / 2
                 color: "transparent"
                 border.color: overlay._rippleColor
-                border.width: Math.max(1, overlay.width * 0.004 * (1 - parent._phase))
-                opacity: 0.6 * (1 - parent._phase)
+                border.width: Math.max(0.7 * overlay._camW,
+                                       Math.min(overlay.width, overlay.height) * 0.0028
+                                       * overlay._camW * (1 - 0.55 * parent.eased))
+                opacity: 0.72 * Math.pow(1 - parent.phase, 1.35)
             }
         }
     }
 
-    // ---- The pointer ---------------------------------------------------------
-    // Default 'pointer' style: a polished built-in vector arrow (macOS-like: white
-    // fill, dark outline, subtle drop shadow), NEVER the recorded bitmap. Its tip
-    // (the SVG hotspot) sits on the smoothed cursor position.
+    // Built-in pointer, also used as a graceful fallback when a compositor did
+    // not provide a recorded system bitmap.
     Image {
-        visible: overlay._cursorVisible && overlay._style === "pointer"
+        visible: overlay._cursorVisible
+                 && (overlay._style === "pointer"
+                     || (overlay._style === "system" && !overlay._haveSystemShape))
+        opacity: overlay._cursorOpacity
         source: "qrc:/resources/cursors/pointer.svg"
-        // Rasterise crisp at the un-pressed display size (stable across a press).
-        sourceSize: Qt.size(Math.max(2, Math.round(overlay._ptrBaseH * 20 / 26)),
-                            Math.max(2, Math.round(overlay._ptrBaseH)))
+        sourceSize: Qt.size(Math.max(2, Math.round(overlay._ptrScreenW * 2)),
+                            Math.max(2, Math.round(overlay._screenH * 2)))
         width: overlay._ptrW
         height: overlay._ptrH
         x: overlay._cursorX - overlay._ptrHotX
         y: overlay._cursorY - overlay._ptrHotY
         smooth: true
+        mipmap: true
         cache: true
         layer.enabled: true
         layer.effect: MultiEffect {
             shadowEnabled: true
-            shadowColor: "#000000"
-            shadowBlur: 0.6
-            shadowVerticalOffset: Math.max(1, overlay._ptrH * 0.03)
-            shadowHorizontalOffset: 0
-            shadowOpacity: 0.35
+            shadowColor: Qt.rgba(0, 0, 0, 1)
+            shadowBlur: 0.55
+            shadowVerticalOffset: Math.max(0.5 * overlay._camH,
+                                           overlay._ptrH * 0.035)
+            shadowOpacity: 0.30
         }
     }
 
-    // System style: the recorded bitmap, anchored at its hotspot.
+    // Recorded cursor bitmap. Normalize its display height to the premium pointer
+    // while preserving its own aspect and exact recorded hotspot.
     Image {
+        readonly property real screenScale: overlay.cursorData
+                                                ? overlay._screenH
+                                                  / Math.max(1, overlay.cursorData.shapeHeight)
+                                                : 1
         visible: overlay._cursorVisible && overlay._style === "system"
-                 && overlay.cursorData && overlay.cursorData.shapeUrl !== ""
+                 && overlay._haveSystemShape
+        opacity: overlay._cursorOpacity
         source: overlay.cursorData ? overlay.cursorData.shapeUrl : ""
-        // Native px are stream px; render crisp at source resolution.
         sourceSize: overlay.cursorData
-                    ? Qt.size(overlay.cursorData.shapeWidth, overlay.cursorData.shapeHeight)
+                    ? Qt.size(overlay.cursorData.shapeWidth * 2,
+                              overlay.cursorData.shapeHeight * 2)
                     : Qt.size(0, 0)
         width: overlay.cursorData
-               ? overlay.cursorData.shapeWidth * overlay._dispScale * overlay._cursorScale : 0
+               ? overlay.cursorData.shapeWidth * screenScale * overlay._camW
+                 * overlay._pressScale : 0
         height: overlay.cursorData
-                ? overlay.cursorData.shapeHeight * overlay._dispScale * overlay._cursorScale : 0
+                ? overlay.cursorData.shapeHeight * screenScale * overlay._camH
+                  * overlay._pressScale : 0
         x: overlay._cursorX
            - (overlay.cursorData ? overlay.cursorData.hotspotX : 0)
-             * overlay._dispScale * overlay._cursorScale
+             * screenScale * overlay._camW * overlay._pressScale
         y: overlay._cursorY
            - (overlay.cursorData ? overlay.cursorData.hotspotY : 0)
-             * overlay._dispScale * overlay._cursorScale
+             * screenScale * overlay._camH * overlay._pressScale
         smooth: true
-        cache: false
+        mipmap: true
+        cache: true
     }
 
-    // Dot / circle style: a synthetic pointer in the ripple-derived colour.
-    Rectangle {
-        readonly property real _d: overlay.width * 0.02 * overlay._cursorScale * overlay._pressScale
-        visible: overlay._cursorVisible
-                 && (overlay._style === "dot" || overlay._style === "circle")
-        x: overlay._cursorX - _d / 2
-        y: overlay._cursorY - _d / 2
-        width: _d
-        height: _d
-        radius: _d / 2
-        color: overlay._style === "dot" ? overlay._rippleColor : "transparent"
-        border.color: overlay._rippleColor
-        border.width: Math.max(1, _d * (overlay._style === "circle" ? 0.16 : 0.08))
+    // Tasteful highlight cursor: translucent accent halo with a crisp light core.
+    Item {
+        readonly property real screenD: overlay._screenH * 0.72
+        visible: overlay._cursorVisible && overlay._style === "dot"
+        opacity: overlay._cursorOpacity
+        x: overlay._cursorX - width / 2
+        y: overlay._cursorY - height / 2
+        width: screenD * overlay._camW * overlay._pressScale
+        height: screenD * overlay._camH * overlay._pressScale
+        Rectangle {
+            anchors.fill: parent
+            radius: Math.min(width, height) / 2
+            color: overlay._rippleColor
+            opacity: 0.42
+        }
+        Rectangle {
+            anchors.centerIn: parent
+            width: parent.width * 0.48
+            height: parent.height * 0.48
+            radius: Math.min(width, height) / 2
+            color: Qt.rgba(1, 1, 1, 0.96)
+        }
+    }
+
+    // Precision ring: accent outline plus a small center point, readable on both
+    // light and dark footage without looking like debug geometry.
+    Item {
+        readonly property real screenD: overlay._screenH * 0.88
+        visible: overlay._cursorVisible && overlay._style === "circle"
+        opacity: overlay._cursorOpacity
+        x: overlay._cursorX - width / 2
+        y: overlay._cursorY - height / 2
+        width: screenD * overlay._camW * overlay._pressScale
+        height: screenD * overlay._camH * overlay._pressScale
+        Rectangle {
+            anchors.fill: parent
+            radius: Math.min(width, height) / 2
+            color: Qt.rgba(0, 0, 0, 0.16)
+            border.color: overlay._rippleColor
+            border.width: Math.max(0.8 * overlay._camW, parent.width * 0.12)
+        }
+        Rectangle {
+            anchors.centerIn: parent
+            width: parent.width * 0.16
+            height: parent.height * 0.16
+            radius: Math.min(width, height) / 2
+            color: Qt.rgba(1, 1, 1, 0.94)
+        }
     }
 }

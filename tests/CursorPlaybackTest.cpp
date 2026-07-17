@@ -9,10 +9,9 @@
 
 #include <cmath>
 
-// CursorPlayback renders from a one-euro-SMOOTHED copy of the track (the virtual
-// cursor glides instead of reproducing raw jitter), so the reference the lookup
-// must agree with is the smoothed track, not the raw one. Smoothing preserves
-// tMs / visible / shapeId verbatim, so the index/visibility logic is unchanged.
+// CursorPlayback first applies one-euro smoothing, then a deterministic soft
+// spring. Raw/smoothed samples remain the target reference; rendered positions
+// intentionally lag and may overshoot slightly.
 static CursorTrack smoothedRef(const CursorTrack &raw)
 {
     CursorTrack out;
@@ -40,54 +39,106 @@ static CursorTrack scriptedCursor()
     return t;
 }
 
+static CursorTrack moveThenHold()
+{
+    CursorTrack track;
+    for (qint64 t = 0; t <= 1000; t += 20)
+        track.append({t, 200, 250, true, 0});
+    for (qint64 t = 1020; t <= 2000; t += 20) {
+        const double f = double(t - 1000) / 1000.0;
+        track.append({t, 200 + 1200 * f, 250 + 300 * f, true, 0});
+    }
+    for (qint64 t = 2020; t <= 6500; t += 20)
+        track.append({t, 1400, 550, true, 0});
+    return track;
+}
+
 class CursorPlaybackTest : public QObject
 {
     Q_OBJECT
 
 private slots:
-    void lookupMatchesCursorTrack();
-    void lookupHandlesSeeksAndClamp();
+    void springFollowLagsOvershootsAndSettles();
+    void deterministicAcrossSeeksAndCadence();
+    void idleHideAndWake();
     void ripplesWindow();
 };
 
-// The cached-index lookup + interpolation must agree with the reference
-// CursorTrack::sample() at every probed instant, whatever the access order.
-void CursorPlaybackTest::lookupMatchesCursorTrack()
+void CursorPlaybackTest::springFollowLagsOvershootsAndSettles()
 {
-    const CursorTrack track = scriptedCursor();
-    const QSize video(1920, 1080);
-    ClickTrack clicks;
-
-    CursorPlayback pb(QStringLiteral("test"));
-    pb.setTracks(track, clicks, video);
-    const CursorTrack ref_track = smoothedRef(track);
-
-    // Sequential forward sweep at fine granularity (the O(1) hot path).
-    for (qint64 t = 0; t <= 7000; t += 7) {
-        pb.setTime(t);
-        const CursorSample ref = ref_track.sample(t);
-        QVERIFY(std::fabs(pb.nx() - ref.x / video.width()) < 1e-9);
-        QVERIFY(std::fabs(pb.ny() - ref.y / video.height()) < 1e-9);
-        QCOMPARE(pb.cursorVisible(), ref.visible);
-    }
-}
-
-void CursorPlaybackTest::lookupHandlesSeeksAndClamp()
-{
-    const CursorTrack track = scriptedCursor();
+    const CursorTrack track = moveThenHold();
     const QSize video(1920, 1080);
     CursorPlayback pb(QStringLiteral("test"));
     pb.setTracks(track, ClickTrack{}, video);
     const CursorTrack ref_track = smoothedRef(track);
 
-    // Random-ish jumps (backward seeks, out-of-range clamps) must still match.
-    const qint64 probes[] = {5000, 10, 3333, 0, 6999, 200, -100, 99999, 1500};
-    for (qint64 t : probes) {
+    QCOMPARE(pb.nx(), 200.0 / video.width());
+    QCOMPARE(pb.ny(), 250.0 / video.height());
+
+    // During deliberate travel the rendered cursor trails its smoothed target.
+    pb.setTime(1500);
+    const CursorSample targetMid = ref_track.sample(1500);
+    QVERIFY(pb.nx() < targetMid.x / video.width() - 0.01);
+    QVERIFY(pb.ny() < targetMid.y / video.height() - 0.003);
+
+    double maxX = 0.0;
+    double maxJump = 0.0;
+    double previousX = pb.nx();
+    for (qint64 t = 1516; t <= 3800; t += 16) {
         pb.setTime(t);
-        const CursorSample ref = ref_track.sample(t);
-        QVERIFY(std::fabs(pb.nx() - ref.x / video.width()) < 1e-9);
-        QVERIFY(std::fabs(pb.ny() - ref.y / video.height()) < 1e-9);
+        maxX = std::max(maxX, double(pb.nx()));
+        maxJump = std::max(maxJump, std::fabs(double(pb.nx()) - previousX));
+        previousX = pb.nx();
     }
+    const double finalX = 1400.0 / video.width();
+    QVERIFY(maxX > finalX);                    // restrained physical overshoot
+    QVERIFY(maxX < finalX + 0.012);            // never a cartoon bounce
+    QVERIFY(maxJump < 0.02);                   // no rendered-position snap
+
+    pb.setTime(3600);
+    QVERIFY(std::fabs(pb.nx() - finalX) < 3e-4);
+    QVERIFY(std::fabs(pb.ny() - 550.0 / video.height()) < 3e-4);
+}
+
+void CursorPlaybackTest::deterministicAcrossSeeksAndCadence()
+{
+    const CursorTrack track = moveThenHold();
+    const QSize video(1920, 1080);
+    CursorPlayback scrubbed(QStringLiteral("scrubbed"));
+    scrubbed.setTracks(track, ClickTrack{}, video);
+    const qint64 probes[] = {5000, 10, 3333, 0, 6200, 200, -100, 99999, 1500};
+    for (qint64 t : probes) {
+        CursorPlayback direct(QStringLiteral("direct"));
+        direct.setTracks(track, ClickTrack{}, video);
+        direct.setTime(t);
+        scrubbed.setTime(t);
+        QVERIFY(std::fabs(scrubbed.nx() - direct.nx()) < 1e-12);
+        QVERIFY(std::fabs(scrubbed.ny() - direct.ny()) < 1e-12);
+        QCOMPARE(scrubbed.cursorOpacity(), direct.cursorOpacity());
+        QCOMPARE(scrubbed.sampleIndexFor(t), direct.sampleIndexFor(t));
+    }
+}
+
+void CursorPlaybackTest::idleHideAndWake()
+{
+    const CursorTrack track = moveThenHold();
+    CursorPlayback pb(QStringLiteral("idle"));
+    pb.setTracks(track, ClickTrack{}, QSize(1920, 1080));
+
+    pb.setTime(3800); // motion ended around 2.1 s; still inside idle grace
+    QCOMPARE(pb.cursorOpacity(), 1.0);
+    QVERIFY(pb.cursorVisible());
+    pb.setTime(4750); // fade-out interval (after smoother + spring settle)
+    QVERIFY(pb.cursorOpacity() > 0.0 && pb.cursorOpacity() < 1.0);
+    pb.setTime(5300);
+    QCOMPARE(pb.cursorOpacity(), 0.0);
+    QVERIFY(!pb.cursorVisible());
+
+    // Backward seek into movement reproduces the visible state immediately and
+    // does not retain hidden state from the later timestamp.
+    pb.setTime(1600);
+    QCOMPARE(pb.cursorOpacity(), 1.0);
+    QVERIFY(pb.cursorVisible());
 }
 
 // A ripple is active only inside [downT, downT + rippleMs); the model reflects
@@ -113,12 +164,21 @@ void CursorPlaybackTest::ripplesWindow()
 
     pb.setTime(1050);
     QCOMPARE(m->rowCount(), 1);              // first click active
+    const qreal rippleX = m->data(m->index(0, 0), CursorRippleModel::NxRole).toReal();
+    CursorPlayback clickReference(QStringLiteral("reference"));
+    clickReference.setTracks(track, clicks, QSize(1920, 1080));
+    clickReference.setTime(1000);
+    QVERIFY(std::fabs(rippleX - clickReference.nx()) < 1e-12);
+    QVERIFY(pb.pressScale() < 1.0);
 
-    pb.setTime(1150);
+    pb.setTime(1200);
     QCOMPARE(m->rowCount(), 2);              // both early clicks overlap
+    QVERIFY(pb.msSinceClick() == 100.0);
+    QVERIFY(pb.pressScale() > 1.0);           // restrained rebound after second click
 
     pb.setTime(1600);
-    QCOMPARE(m->rowCount(), 0);              // both expired (rippleMs=420)
+    QCOMPARE(m->rowCount(), 0);              // both expired (rippleMs=440)
+    QCOMPARE(pb.msSinceClick(), -1.0);
 
     pb.setTime(5100);
     QCOMPARE(m->rowCount(), 1);              // isolated click active

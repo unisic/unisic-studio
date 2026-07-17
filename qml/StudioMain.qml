@@ -161,16 +161,51 @@ Window {
             width: Math.min(440, parent.width - 2 * Theme.spacingXL)
             spacing: Theme.spacingL
 
-            UIcon {
-                name: "monitor"
-                color: Theme.textTertiary
-                size: 72
+            UCard {
+                width: Math.min(340, parent.width)
+                height: 176
                 anchors.horizontalCenter: parent.horizontalCenter
+                padding: Theme.spacingM
+                Rectangle {
+                    anchors.fill: parent
+                    radius: Theme.radiusM
+                    gradient: Gradient {
+                        GradientStop { position: 0.0; color: Theme.primary }
+                        GradientStop { position: 1.0; color: Theme.secondary }
+                    }
+                    Rectangle {
+                        width: parent.width * 0.70
+                        height: parent.height * 0.68
+                        anchors.centerIn: parent
+                        radius: Theme.radiusM
+                        color: Theme.backgroundDeep
+                        border.width: 1
+                        border.color: Theme.edgeLight
+                        Rectangle {
+                            width: parent.width * 0.34
+                            height: parent.height * 0.42
+                            x: parent.width * 0.48
+                            y: parent.height * 0.22
+                            radius: Theme.radiusS
+                            color: Theme.alpha(Theme.accent, 0.12)
+                            border.width: 2
+                            border.color: Theme.accent
+                        }
+                        UIcon {
+                            name: "arrow-up"
+                            rotation: -35
+                            size: 25
+                            color: Theme.textPrimary
+                            x: parent.width * 0.63
+                            y: parent.height * 0.42
+                        }
+                    }
+                }
             }
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter
                 horizontalAlignment: Text.AlignHCenter
-                text: qsTr("No projects yet")
+                text: qsTr("Polished motion, automatically")
                 color: Theme.textPrimary
                 font.pixelSize: Theme.fontXL
                 font.weight: Font.Bold
@@ -180,7 +215,7 @@ Window {
                 horizontalAlignment: Text.AlignHCenter
                 width: parent.width
                 wrapMode: Text.WordWrap
-                text: qsTr("Record your screen or import a video to get started")
+                text: qsTr("Record or import a screen capture. Studio frames clicks, glides the cursor, and builds a presentation-ready edit.")
                 color: Theme.textSecondary
                 font.pixelSize: Theme.fontM
             }

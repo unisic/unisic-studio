@@ -3,8 +3,6 @@
 #include "CursorSmoother.h"
 #include "ClickTrack.h"
 #include "CursorTrack.h"
-#include "Easing.h"
-
 #include <algorithm>
 #include <cmath>
 
@@ -30,6 +28,8 @@ QJsonObject KeyframeEngine::Params::toJson() const
         {"deadZoneFrac", deadZoneFrac},
         {"dwellMinMs", dwellMinMs},
         {"dwellSpeedFracPerSec", dwellSpeedFracPerSec},
+        {"zoomIntensity", zoomIntensity},
+        {"motionSmoothness", motionSmoothness},
         {"fill", fill},
     };
 }
@@ -54,6 +54,8 @@ KeyframeEngine::Params KeyframeEngine::Params::fromJson(const QJsonObject &o)
     p.deadZoneFrac = d("deadZoneFrac", p.deadZoneFrac);
     p.dwellMinMs = i("dwellMinMs", p.dwellMinMs);
     p.dwellSpeedFracPerSec = d("dwellSpeedFracPerSec", p.dwellSpeedFracPerSec);
+    p.zoomIntensity = std::clamp(d("zoomIntensity", p.zoomIntensity), 0.0, 1.0);
+    p.motionSmoothness = std::clamp(d("motionSmoothness", p.motionSmoothness), 0.0, 1.0);
     p.fill = o.contains("fill") ? o.value("fill").toBool(p.fill) : p.fill;
     return p;
 }
@@ -72,46 +74,272 @@ double KeyframeEngine::aspectRatio(const QString &aspect, double fallback)
 }
 
 // ---------------------------------------------------------------------------
-// evaluate(): rect at t under the "hold, then ease into each keyframe" model
-// documented in the header. Same routine drives preview and export.
+// SpringCameraEvaluator
 // ---------------------------------------------------------------------------
 namespace {
 
-QRectF lerpRect(const QRectF &a, const QRectF &b, double e)
+constexpr double kMinRectSize = 1.0e-5;
+constexpr double kPositionSnap = 2.0e-6;
+constexpr double kVelocitySnap = 2.0e-5;
+
+double finiteOr(double value, double fallback)
 {
-    return QRectF(a.x() + (b.x() - a.x()) * e,
-                  a.y() + (b.y() - a.y()) * e,
-                  a.width() + (b.width() - a.width()) * e,
-                  a.height() + (b.height() - a.height()) * e);
+    return std::isfinite(value) ? value : fallback;
+}
+
+void clampVector(QPointF *v, double maxLength)
+{
+    const double length = std::hypot(v->x(), v->y());
+    if (length <= maxLength || length <= 0.0)
+        return;
+    const double scale = maxLength / length;
+    v->setX(v->x() * scale);
+    v->setY(v->y() * scale);
 }
 
 } // namespace
 
-QRectF KeyframeEngine::evaluate(const QVector<Keyframe> &kfs, qint64 tMs)
+SpringCameraEvaluator::SpringCameraEvaluator()
 {
-    if (kfs.isEmpty())
-        return QRectF(0, 0, 1, 1);          // no camera == whole frame
-    if (tMs <= kfs.first().tMs)
-        return kfs.first().rect;
-    if (tMs >= kfs.last().tMs)
-        return kfs.last().rect;
+    setTimeline({}, parametersForSmoothness(m_parameters.smoothness));
+}
 
-    // First keyframe strictly after t; the one before it is A.
-    int hi = 1;
-    while (hi < kfs.size() && kfs.at(hi).tMs <= tMs)
-        ++hi;
-    const Keyframe &A = kfs.at(hi - 1);
-    const Keyframe &B = kfs.at(hi);
+SpringCameraEvaluator::SpringCameraEvaluator(const QVector<Keyframe> &keyframes,
+                                             double smoothness)
+{
+    setTimeline(keyframes, smoothness);
+}
 
-    const qint64 span = B.tMs - A.tMs;
-    if (span <= 0)
-        return B.rect;
-    const qint64 d = std::min<qint64>(B.easeInMs > 0 ? B.easeInMs : span, span);
-    const qint64 transitionStart = B.tMs - d;
-    if (tMs <= transitionStart)
-        return A.rect;                       // still holding A's rect
-    const double u = double(tMs - transitionStart) / double(d);
-    return lerpRect(A.rect, B.rect, Easing::preset(u));
+SpringCameraEvaluator::Parameters
+SpringCameraEvaluator::parametersForSmoothness(double smoothness)
+{
+    Parameters p;
+    p.smoothness = std::clamp(finiteOr(smoothness, p.smoothness), 0.0, 1.0);
+    // Higher smoothness means a softer spring. Values keep the 2% settling
+    // window around 300-650 ms, fitting the generator's 650/900 ms lead times.
+    p.centerStiffness = 255.0 + (95.0 - 255.0) * p.smoothness;
+    p.zoomStiffness = 205.0 + (62.0 - 205.0) * p.smoothness;
+    return p;
+}
+
+QRectF SpringCameraEvaluator::boundedRect(const QRectF &rect)
+{
+    double w = std::clamp(std::fabs(finiteOr(rect.width(), 1.0)), kMinRectSize, 1.0);
+    double h = std::clamp(std::fabs(finiteOr(rect.height(), 1.0)), kMinRectSize, 1.0);
+    double x = finiteOr(rect.x(), 0.0);
+    double y = finiteOr(rect.y(), 0.0);
+    x = std::clamp(x, 0.0, 1.0 - w);
+    y = std::clamp(y, 0.0, 1.0 - h);
+    return QRectF(x, y, w, h);
+}
+
+void SpringCameraEvaluator::setTimeline(const QVector<Keyframe> &keyframes,
+                                        double smoothness)
+{
+    setTimeline(keyframes, parametersForSmoothness(smoothness));
+}
+
+void SpringCameraEvaluator::setTimeline(const QVector<Keyframe> &keyframes,
+                                        const Parameters &parameters)
+{
+    m_parameters = parameters;
+    m_parameters.smoothness = std::clamp(finiteOr(parameters.smoothness, 0.68), 0.0, 1.0);
+    m_parameters.centerStiffness = std::max(1.0, finiteOr(parameters.centerStiffness, 150.0));
+    m_parameters.zoomStiffness = std::max(1.0, finiteOr(parameters.zoomStiffness, 105.0));
+    m_parameters.centerDampingRatio =
+        std::clamp(finiteOr(parameters.centerDampingRatio, 1.0), 0.05, 3.0);
+    m_parameters.zoomDampingRatio =
+        std::clamp(finiteOr(parameters.zoomDampingRatio, 0.86), 0.05, 3.0);
+    m_parameters.maxCenterVelocity =
+        std::max(0.01, finiteOr(parameters.maxCenterVelocity, 1.35));
+    m_parameters.maxZoomVelocity =
+        std::max(0.01, finiteOr(parameters.maxZoomVelocity, 2.0));
+    m_parameters.stepMs = std::clamp(parameters.stepMs, 1, 16);
+    m_parameters.checkpointMs = std::max(m_parameters.stepMs, parameters.checkpointMs);
+    m_parameters.checkpointMs -= m_parameters.checkpointMs % m_parameters.stepMs;
+
+    QVector<Keyframe> sorted = keyframes;
+    std::stable_sort(sorted.begin(), sorted.end(),
+                     [](const Keyframe &a, const Keyframe &b) { return a.tMs < b.tMs; });
+
+    m_events.clear();
+    m_events.reserve(sorted.size());
+    QRectF initialRect(0, 0, 1, 1);
+    for (const Keyframe &keyframe : std::as_const(sorted)) {
+        if (keyframe.tMs <= 0)
+            initialRect = boundedRect(keyframe.rect);
+    }
+    for (int i = 0; i < sorted.size(); ++i) {
+        const Keyframe &keyframe = sorted.at(i);
+        const qint64 previousTime = i > 0 ? sorted.at(i - 1).tMs : 0;
+        const qint64 lead = std::max(0, keyframe.easeInMs);
+        const qint64 activationMs =
+            std::max<qint64>(0, std::max(previousTime, keyframe.tMs - lead));
+        m_events.append({activationMs * 1000, boundedRect(keyframe.rect)});
+    }
+    std::stable_sort(m_events.begin(), m_events.end(),
+                     [](const TargetEvent &a, const TargetEvent &b) { return a.atUs < b.atUs; });
+
+    m_initial = {};
+    m_initial.center = initialRect.center();
+    m_initial.logSize = QPointF(std::log(initialRect.width()), std::log(initialRect.height()));
+    m_initial.target = initialRect;
+    applyEvents(&m_initial); // target switches at t=0; state itself stays at its authored opener
+    m_forward = m_initial;
+    m_checkpoints = {m_initial};
+    m_hasTimeline = !sorted.isEmpty();
+}
+
+void SpringCameraEvaluator::applyEvents(State *state) const
+{
+    while (state->nextEvent < m_events.size()
+           && m_events.at(state->nextEvent).atUs <= state->timeUs) {
+        state->target = m_events.at(state->nextEvent).rect;
+        ++state->nextEvent;
+    }
+}
+
+void SpringCameraEvaluator::integrate(State *state, double dt) const
+{
+    const QPointF targetCenter = state->target.center();
+    const QPointF targetLog(std::log(state->target.width()), std::log(state->target.height()));
+
+    const double centerOmega = std::sqrt(m_parameters.centerStiffness);
+    const double centerDamping =
+        2.0 * m_parameters.centerDampingRatio * centerOmega;
+    QPointF centerAcceleration(
+        m_parameters.centerStiffness * (targetCenter.x() - state->center.x())
+            - centerDamping * state->centerVelocity.x(),
+        m_parameters.centerStiffness * (targetCenter.y() - state->center.y())
+            - centerDamping * state->centerVelocity.y());
+    state->centerVelocity += centerAcceleration * dt;
+    clampVector(&state->centerVelocity, m_parameters.maxCenterVelocity);
+    state->center += state->centerVelocity * dt;
+
+    const double zoomOmega = std::sqrt(m_parameters.zoomStiffness);
+    const double zoomDamping = 2.0 * m_parameters.zoomDampingRatio * zoomOmega;
+    QPointF zoomAcceleration(
+        m_parameters.zoomStiffness * (targetLog.x() - state->logSize.x())
+            - zoomDamping * state->logSizeVelocity.x(),
+        m_parameters.zoomStiffness * (targetLog.y() - state->logSize.y())
+            - zoomDamping * state->logSizeVelocity.y());
+    state->logSizeVelocity += zoomAcceleration * dt;
+    clampVector(&state->logSizeVelocity, m_parameters.maxZoomVelocity);
+    state->logSize += state->logSizeVelocity * dt;
+
+    if (std::hypot(targetCenter.x() - state->center.x(),
+                   targetCenter.y() - state->center.y()) < kPositionSnap
+        && std::hypot(state->centerVelocity.x(), state->centerVelocity.y()) < kVelocitySnap) {
+        state->center = targetCenter;
+        state->centerVelocity = {};
+    }
+    if (std::hypot(targetLog.x() - state->logSize.x(),
+                   targetLog.y() - state->logSize.y()) < kPositionSnap
+        && std::hypot(state->logSizeVelocity.x(), state->logSizeVelocity.y()) < kVelocitySnap) {
+        state->logSize = targetLog;
+        state->logSizeVelocity = {};
+    }
+
+    // Reconstruct once per substep to enforce positive dimensions and frame
+    // bounds. If a clamp blocks velocity, remove only its outward component.
+    (void)rectForState(state);
+}
+
+QRectF SpringCameraEvaluator::rectForState(State *state)
+{
+    double w = std::clamp(std::exp(state->logSize.x()), kMinRectSize, 1.0);
+    double h = std::clamp(std::exp(state->logSize.y()), kMinRectSize, 1.0);
+    if (w >= 1.0 && state->logSizeVelocity.x() > 0.0) {
+        state->logSize.setX(0.0);
+        state->logSizeVelocity.setX(0.0);
+    }
+    if (h >= 1.0 && state->logSizeVelocity.y() > 0.0) {
+        state->logSize.setY(0.0);
+        state->logSizeVelocity.setY(0.0);
+    }
+
+    const double minX = w / 2.0;
+    const double maxX = 1.0 - minX;
+    const double minY = h / 2.0;
+    const double maxY = 1.0 - minY;
+    const double oldX = state->center.x();
+    const double oldY = state->center.y();
+    state->center.setX(std::clamp(oldX, minX, maxX));
+    state->center.setY(std::clamp(oldY, minY, maxY));
+    if ((oldX < minX && state->centerVelocity.x() < 0.0)
+        || (oldX > maxX && state->centerVelocity.x() > 0.0))
+        state->centerVelocity.setX(0.0);
+    if ((oldY < minY && state->centerVelocity.y() < 0.0)
+        || (oldY > maxY && state->centerVelocity.y() > 0.0))
+        state->centerVelocity.setY(0.0);
+
+    return QRectF(state->center.x() - w / 2.0, state->center.y() - h / 2.0, w, h);
+}
+
+void SpringCameraEvaluator::advance(State *state, qint64 destinationUs) const
+{
+    while (state->timeUs < destinationUs) {
+        qint64 segmentEnd = destinationUs;
+        if (state->nextEvent < m_events.size())
+            segmentEnd = std::min(segmentEnd, m_events.at(state->nextEvent).atUs);
+        if (segmentEnd > state->timeUs) {
+            integrate(state, double(segmentEnd - state->timeUs) / 1.0e6);
+            state->timeUs = segmentEnd;
+        }
+        applyEvents(state);
+    }
+}
+
+SpringCameraEvaluator::State
+SpringCameraEvaluator::stateForCanonicalTime(qint64 canonicalUs)
+{
+    const qint64 stepUs = qint64(m_parameters.stepMs) * 1000;
+    const qint64 checkpointUs = qint64(m_parameters.checkpointMs) * 1000;
+    if (canonicalUs >= m_forward.timeUs) {
+        while (m_forward.timeUs < canonicalUs) {
+            advance(&m_forward, std::min(canonicalUs, m_forward.timeUs + stepUs));
+            if (m_forward.timeUs > 0 && m_forward.timeUs % checkpointUs == 0
+                && (m_checkpoints.isEmpty()
+                    || m_checkpoints.last().timeUs != m_forward.timeUs))
+                m_checkpoints.append(m_forward);
+        }
+        return m_forward;
+    }
+
+    const auto it = std::upper_bound(
+        m_checkpoints.cbegin(), m_checkpoints.cend(), canonicalUs,
+        [](qint64 time, const State &checkpoint) { return time < checkpoint.timeUs; });
+    State state = it == m_checkpoints.cbegin() ? m_initial : *(it - 1);
+    while (state.timeUs < canonicalUs)
+        advance(&state, std::min(canonicalUs, state.timeUs + stepUs));
+    return state;
+}
+
+QRectF SpringCameraEvaluator::evaluate(qint64 tMs)
+{
+    if (!m_hasTimeline)
+        return QRectF(0, 0, 1, 1);
+    const qint64 targetUs = std::max<qint64>(0, tMs) * 1000;
+    const qint64 stepUs = qint64(m_parameters.stepMs) * 1000;
+    const qint64 canonicalUs = targetUs - targetUs % stepUs;
+    State state = stateForCanonicalTime(canonicalUs);
+    if (state.timeUs < targetUs)
+        advance(&state, targetUs);
+    return rectForState(&state);
+}
+
+QRectF SpringCameraEvaluator::targetAt(qint64 tMs) const
+{
+    if (!m_hasTimeline)
+        return QRectF(0, 0, 1, 1);
+    QRectF target = m_initial.target;
+    const qint64 targetUs = std::max<qint64>(0, tMs) * 1000;
+    for (const TargetEvent &event : m_events) {
+        if (event.atUs > targetUs)
+            break;
+        target = event.rect;
+    }
+    return target;
 }
 
 // ---------------------------------------------------------------------------
@@ -127,9 +355,7 @@ using Keyframe = KeyframeEngine::Keyframe;
 using Params = KeyframeEngine::Params;
 
 constexpr int kCameraTickMs = 100;          // dead-zone re-evaluation cadence (10 Hz)
-constexpr double kMoveEmitFrac = 0.01;      // emit a pan keyframe once the camera
-                                            // center shifts > 1% of the frame
-constexpr int kPanEaseMs = 300;             // pan smoothing (clamped to the gap)
+constexpr int kPanEaseMs = 450;             // spring-target lead for a deliberate pan
 
 // Smoothed cursor in normalised [0,1] frame coords + per-sample speed in
 // width-fraction / second. Lookups clamp outside the recorded range.
@@ -178,6 +404,8 @@ struct Segment {
     QRectF bbox;           // normalised bbox of the cluster / dwell points
     bool dwell = false;
     QVector<qint64> clickTimes;
+    QPointF focus = QPointF(0.5, 0.5);
+    int evidenceCount = 0;
 };
 
 struct Span {
@@ -186,6 +414,8 @@ struct Span {
     QRectF bbox;
     bool dwell = false;
     QVector<qint64> clickTimes;
+    QPointF focus = QPointF(0.5, 0.5);
+    int evidenceCount = 0;
 };
 
 Cam buildCam(const CursorTrack &cursor, double W, double H)
@@ -226,6 +456,9 @@ QVector<Segment> clusterClicks(const ClickTrack &clicks, const Params &p, double
     for (const ClickEvent &e : clicks.events()) {
         if (e.state != ClickEvent::Down)
             continue;
+        if (e.x < 0.0 || e.y < 0.0 || e.x > W || e.y > H)
+            continue; // global libinput click outside the captured stream
+        const QPointF point(e.x / W, e.y / H);
         const bool joins = open
             && (e.tMs - prevT) < p.clickClusterGapMs
             && std::hypot(e.x - prevPx, e.y - prevPy) / W < p.clickClusterDistFrac;
@@ -233,9 +466,13 @@ QVector<Segment> clusterClicks(const ClickTrack &clicks, const Params &p, double
             close();
             cur = Segment{};
             cur.tFirst = e.tMs;
-            cur.bbox = QRectF(QPointF(e.x / W, e.y / H), QPointF(e.x / W, e.y / H));
+            cur.bbox = QRectF(point, point);
+            cur.focus = point;
+            cur.evidenceCount = 0;
             open = true;
         }
+        cur.focus = (cur.focus * cur.evidenceCount + point) / (cur.evidenceCount + 1);
+        ++cur.evidenceCount;
         cur.tLast = e.tMs;
         cur.clickTimes.append(e.tMs);
         QRectF b = cur.bbox;
@@ -273,7 +510,23 @@ QVector<Segment> dwellSegments(const Cam &cam, const Params &p, qint64 durationM
         }
         const qint64 t0 = cam.t.at(runStart);
         const qint64 t1 = cam.t.at(std::min(i, int(cam.t.size()) - 1));
-        if (t1 - t0 < p.dwellMinMs)
+        const int effectiveDwellMs =
+            int(std::lround(p.dwellMinMs * (1.75 - 0.75 * p.zoomIntensity)));
+        if (t1 - t0 < effectiveDwellMs)
+            continue;
+        // A static pointer for the whole clip is not interaction evidence. Keep
+        // only a dwell that was approached or deliberately departed.
+        bool activityEvidence = false;
+        const int before = std::max(1, runStart - 32);
+        const int after = std::min(int(cam.spd.size()) - 1, i + 32);
+        for (int j = before; j <= after; ++j) {
+            if ((j < runStart || j >= i)
+                && cam.spd.at(j) >= p.dwellSpeedFracPerSec * 1.5) {
+                activityEvidence = true;
+                break;
+            }
+        }
+        if (!activityEvidence)
             continue;
         Segment s;
         s.dwell = true;
@@ -281,6 +534,8 @@ QVector<Segment> dwellSegments(const Cam &cam, const Params &p, qint64 durationM
         s.tLast = std::min(t1, durationMs);
         const double mx = sx / cnt, my = sy / cnt;
         s.bbox = QRectF(mx, my, 0, 0);      // a point; zoom uses the dwell level
+        s.focus = QPointF(mx, my);
+        s.evidenceCount = 1;
         segs.append(s);
     }
     return segs;
@@ -292,7 +547,10 @@ QVector<Segment> dwellSegments(const Cam &cam, const Params &p, qint64 durationM
 QVector<Span> shapeSpans(const QVector<Segment> &segs, const Params &p, qint64 durationMs)
 {
     QVector<Span> spans;
-    const qint64 mergeGap = qint64(p.zoomOutMs) + p.zoomInMs;
+    // Lower intensity means fewer camera events: retain one framing through a
+    // longer idle gap instead of pumping out and immediately back in.
+    const qint64 mergeGap = qint64(p.zoomOutMs) + p.zoomInMs
+                            + qint64(std::lround((1.0 - p.zoomIntensity) * 1800.0));
     for (const Segment &sg : segs) {
         Span s;
         s.start = std::max<qint64>(0, sg.tFirst - p.leadInMs);
@@ -300,9 +558,16 @@ QVector<Span> shapeSpans(const QVector<Segment> &segs, const Params &p, qint64 d
         s.bbox = sg.bbox;
         s.dwell = sg.dwell;
         s.clickTimes = sg.clickTimes;
+        s.focus = sg.focus;
+        s.evidenceCount = sg.evidenceCount;
         if (!spans.isEmpty() && s.start - spans.last().end < mergeGap) {
             // Retarget instead of out+in: keep zoomed, union the framing.
             Span &prev = spans.last();
+            const int evidence = prev.evidenceCount + s.evidenceCount;
+            if (evidence > 0)
+                prev.focus = (prev.focus * prev.evidenceCount + s.focus * s.evidenceCount)
+                             / evidence;
+            prev.evidenceCount = evidence;
             prev.end = std::max(prev.end, s.end);
             prev.bbox = prev.bbox.united(s.bbox);
             prev.dwell = prev.dwell && s.dwell;
@@ -387,7 +652,40 @@ struct Geometry {
         const double zFit = std::min(bw0 / std::max(bw, 1e-6), bh0 / std::max(bh, 1e-6));
         return std::clamp(zFit, p.zoomMin, p.zoomMax);
     }
+
+    QPointF centerForBbox(const QRectF &bbox, QPointF focus, double z, const Params &p) const
+    {
+        const double srcAspect = W / H;
+        const double padX = p.marginFrac;
+        const double padY = p.marginFrac * srcAspect;
+        const double left = std::max(0.0, bbox.left() - padX);
+        const double right = std::min(1.0, bbox.right() + padX);
+        const double top = std::max(0.0, bbox.top() - padY);
+        const double bottom = std::min(1.0, bbox.bottom() + padY);
+        const double viewW = bw0 / z;
+        const double viewH = bh0 / z;
+        const double minCx = right - viewW / 2.0;
+        const double maxCx = left + viewW / 2.0;
+        const double minCy = bottom - viewH / 2.0;
+        const double maxCy = top + viewH / 2.0;
+        if (minCx <= maxCx)
+            focus.setX(std::clamp(focus.x(), minCx, maxCx));
+        else
+            focus.setX(bbox.center().x());
+        if (minCy <= maxCy)
+            focus.setY(std::clamp(focus.y(), minCy, maxCy));
+        else
+            focus.setY(bbox.center().y());
+        return rectAt(focus, z).center();
+    }
 };
+
+double intensityZoom(double zoom, const Params &p)
+{
+    const double strength = std::clamp(p.zoomIntensity / ZoomTimeline::DefaultZoomIntensity,
+                                       0.0, 1.25);
+    return std::clamp(1.0 + (zoom - 1.0) * strength, 1.0, 2.55);
+}
 
 // Emit the keyframes for one span into `out`. Returns nothing; the dead-zone
 // camera runs at 10 Hz and only lays down a pan keyframe when the center has
@@ -403,11 +701,12 @@ void emitSpan(const Span &s, const Cam &cam, const Geometry &g, const Params &p,
     } else {
         z = g.zoomForBbox(s.bbox, p);
     }
+    z = intensityZoom(z, p);
 
     // The camera freezes at the cluster centre through the zoom-in ramp, then
     // the dead-zone follows the cursor. bbox.center() is exactly the click
     // point for a single-click cluster (a 0-size bbox), which frames it well.
-    QPointF center = s.bbox.center();
+    QPointF center = g.centerForBbox(s.bbox, s.focus, z, p);
 
     auto mk = [&](qint64 t, QRectF rect, int easeIn, int easeOut) {
         Keyframe k;
@@ -437,7 +736,10 @@ void emitSpan(const Span &s, const Cam &cam, const Geometry &g, const Params &p,
         else if (dx < -hx) center.setX(center.x() + (dx + hx));
         if (dy > hy)      center.setY(center.y() + (dy - hy));
         else if (dy < -hy) center.setY(center.y() + (dy + hy));
-        if (std::hypot(center.x() - lastEmitted.x(), center.y() - lastEmitted.y()) > kMoveEmitFrac) {
+        center = g.rectAt(center, z).center();
+        const double emitDistance = std::max(0.02, std::min(view.width(), view.height()) * 0.09);
+        if (std::hypot(center.x() - lastEmitted.x(), center.y() - lastEmitted.y())
+            > emitDistance) {
             mk(t, g.rectAt(center, z), kPanEaseMs, p.zoomOutMs);
             lastEmitted = center;
         }
@@ -452,8 +754,8 @@ void emitSpan(const Span &s, const Cam &cam, const Geometry &g, const Params &p,
 // rect of the source (g.rectAt(center, 1)). It slow-pans to follow the cursor
 // with a LARGE dead zone, so the action stays framed without the twitchy motion
 // of the tight in-span camera. Sampled at span boundaries too.
-constexpr double kFillBaseDeadZone = 0.55;  // large → the base crop drifts slowly
-constexpr int kBasePanEaseMs = 700;         // gentle ease for a base pan
+constexpr double kFillBaseDeadZone = 0.68;  // large -> base framing stays calm
+constexpr int kBasePanEaseMs = 900;         // gentle spring-target lead for base pan
 
 struct BaseTrack {
     QVector<qint64> t;
@@ -512,8 +814,9 @@ void emitSpanFill(const Span &s, const Cam &cam, const Geometry &g, const Params
         z = std::max(1.0, p.zoomMin + (1.0 - p.zoomMin) * 0.25);
     else
         z = g.zoomForBbox(s.bbox, p);
+    z = intensityZoom(z, p);
 
-    QPointF center = s.bbox.center();
+    QPointF center = g.centerForBbox(s.bbox, s.focus, z, p);
     auto mk = [&](qint64 t, QRectF rect, int easeIn, int easeOut) {
         Keyframe k;
         k.tMs = std::clamp<qint64>(t, 0, durationMs);
@@ -543,7 +846,10 @@ void emitSpanFill(const Span &s, const Cam &cam, const Geometry &g, const Params
         else if (dx < -hx) center.setX(center.x() + (dx + hx));
         if (dy > hy)       center.setY(center.y() + (dy - hy));
         else if (dy < -hy) center.setY(center.y() + (dy + hy));
-        if (std::hypot(center.x() - lastEmitted.x(), center.y() - lastEmitted.y()) > kMoveEmitFrac) {
+        center = g.rectAt(center, z).center();
+        const double emitDistance = std::max(0.02, std::min(view.width(), view.height()) * 0.09);
+        if (std::hypot(center.x() - lastEmitted.x(), center.y() - lastEmitted.y())
+            > emitDistance) {
             mk(t, g.rectAt(center, z), kPanEaseMs, p.zoomOutMs);
             lastEmitted = center;
         }
@@ -580,6 +886,8 @@ QVector<Keyframe> KeyframeEngine::generate(const CursorTrack &cursor,
         segs = clusterClicks(clicks, params, W, H);
     else
         segs = dwellSegments(cam, params, durationMs);
+    if (params.zoomIntensity <= 0.02)
+        segs.clear();
 
     QVector<Span> spans = shapeSpans(segs, params, durationMs);
 
@@ -644,8 +952,12 @@ QVector<Keyframe> KeyframeEngine::generate(const CursorTrack &cursor,
                 lastEmitted = base.c.at(i);  // resume measuring from where the span left the base
                 continue;
             }
-            if (std::hypot(base.c.at(i).x() - lastEmitted.x(),
-                           base.c.at(i).y() - lastEmitted.y()) > kMoveEmitFrac) {
+            const QRectF baseView = g.rectAt(base.c.at(i), 1.0);
+            const double emitDistance =
+                std::max(0.025, std::min(baseView.width(), baseView.height()) * 0.10);
+            if (params.zoomIntensity > 0.02
+                && std::hypot(base.c.at(i).x() - lastEmitted.x(),
+                              base.c.at(i).y() - lastEmitted.y()) > emitDistance) {
                 Keyframe k;
                 k.tMs = t;
                 k.rect = g.rectAt(base.c.at(i), 1.0);

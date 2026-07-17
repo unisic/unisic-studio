@@ -1,5 +1,6 @@
 #include "StudioApp.h"
 #include "AutozoomSelfTest.h"
+#include "MotionSelfTest.h"
 #include "project/StudioProject.h"
 #include "project/StyleModel.h"
 #include "media/VideoProbe.h"
@@ -118,6 +119,15 @@ int main(int argc, char *argv[])
 
     installSignalHandlers(&app);
 
+    const QStringList arguments = app.arguments();
+    const bool autozoomTestMode = arguments.contains(QStringLiteral("--autozoom-test"));
+    const bool motionTestMode = arguments.contains(QStringLiteral("--motion-test"));
+    if (autozoomTestMode && motionTestMode) {
+        fprintf(stderr, "Choose only one of --autozoom-test and --motion-test.\n");
+        return 2;
+    }
+    const bool isolatedMotionTest = autozoomTestMode || motionTestMode;
+
     // A .unisicstudio project passed positionally (file-manager double-click via
     // the desktop file's `%f`, or `unisic-studio foo.unisicstudio`) opens in the
     // editor. Filtered by suffix so the hidden --import/--export-test flag values
@@ -137,19 +147,21 @@ int main(int argc, char *argv[])
     // exits, so only one process ever writes the config file. Only the genuinely
     // environmental no-peer case falls through to a fresh instance.
     const QString serverName = singleInstanceServerName();
-    if (notifyExistingInstance(serverName, fileToOpen))
-        return 0;
-    QLocalServer::removeServer(serverName); // clear a stale socket left by a crash
     auto *server = new QLocalServer(&app);
-    if (!server->listen(serverName)) {
-        // A live peer may have taken the name between our probe and listen() —
-        // hand off rather than boot a duplicate config writer.
+    if (!isolatedMotionTest) {
         if (notifyExistingInstance(serverName, fileToOpen))
             return 0;
-        qWarning() << "Could not create single-instance server:" << server->errorString();
+        QLocalServer::removeServer(serverName); // clear a stale socket left by a crash
+        if (!server->listen(serverName)) {
+            // A live peer may have taken the name between our probe and listen() —
+            // hand off rather than boot a duplicate config writer.
+            if (notifyExistingInstance(serverName, fileToOpen))
+                return 0;
+            qWarning() << "Could not create single-instance server:" << server->errorString();
+        }
+        QObject::connect(&app, &QCoreApplication::aboutToQuit, &app,
+                         [serverName] { QLocalServer::removeServer(serverName); });
     }
-    QObject::connect(&app, &QCoreApplication::aboutToQuit, &app,
-                     [serverName] { QLocalServer::removeServer(serverName); });
 
     QQuickStyle::setStyle(QStringLiteral("Basic")); // fully custom look, no platform theme
 
@@ -191,6 +203,18 @@ int main(int argc, char *argv[])
 #endif
 
     StudioApp studio;
+
+    // Motion integration tests are isolated from the regular UID-keyed socket
+    // and skip the visible main QML engine. RenderPipeline creates the exact
+    // CompositionRoot engine it needs, so these remain unattended GL tests and
+    // can run while a normal Studio instance is open.
+    if (isolatedMotionTest) {
+        if (motionTestMode)
+            QTimer::singleShot(0, &studio, [&studio] { MotionSelfTest::run(&studio); });
+        else
+            QTimer::singleShot(0, &studio, [&studio] { AutozoomSelfTest::run(&studio); });
+        return app.exec();
+    }
 
     QQmlApplicationEngine engine;
     // The kit's ThemeController is a module QML singleton (engine-created); the
@@ -412,9 +436,6 @@ int main(int argc, char *argv[])
                 if (mainWin)
                     mainWin->setProperty("currentPage", idx);
             });
-        }
-        if (args.contains(QStringLiteral("--autozoom-test"))) {
-            QTimer::singleShot(0, &studio, [&studio] { AutozoomSelfTest::run(&studio); });
         }
         // Dev aid: run the F8 smoke test headlessly, print the transcript, and
         // exit 0 (no FAIL lines) / 4 (a step failed). Runs on a live session

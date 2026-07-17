@@ -257,6 +257,7 @@ void ExportController::start(StudioProject *project)
     // Camera + cursor overlay: snapshot the live models so the offscreen render
     // is decoupled from any concurrent editing (copies are cheap/COW).
     s.keyframes = project->zoom()->keyframes();
+    s.motionSmoothness = project->zoom()->motionSmoothness();
     s.cursor = project->cursorTrack();
     s.clicks = project->clickTrack();
     s.projectId = QString::number(quintptr(project), 16);

@@ -19,6 +19,7 @@ private slots:
     void refusesNewerSchema();
     void relativePathResolutionAndMissingVideo();
     void dirtyFlagLifecycle();
+    void premiumDefaultsAndLegacyFallback();
 
 private:
     static void writeFile(const QString &path, const QByteArray &bytes)
@@ -73,7 +74,9 @@ void StudioProjectTest::saveLoadRoundtripEquality()
     k.source = ZoomTimeline::Auto;
     k.locked = true;
     p.zoom()->addKeyframe(k);
-    p.zoom()->setAutoParams(QJsonObject{{QStringLiteral("strength"), 1.25}});
+    p.zoom()->setAutoParams(QJsonObject{{QStringLiteral("strength"), 1.25},
+                                        {QStringLiteral("zoomIntensity"), 0.61},
+                                        {QStringLiteral("motionSmoothness"), 0.84}});
 
     p.style()->setBackgroundType(QStringLiteral("gradient"));
     p.style()->setPaddingPct(14.5);
@@ -124,6 +127,8 @@ void StudioProjectTest::saveLoadRoundtripEquality()
     QCOMPARE(r->zoom()->keyframes().at(0).rect, QRectF(0.2, 0.2, 0.6, 0.6));
     QCOMPARE(r->zoom()->keyframes().at(0).locked, true);
     QCOMPARE(r->zoom()->autoParams().value(QStringLiteral("strength")).toDouble(), 1.25);
+    QCOMPARE(r->zoom()->zoomIntensity(), 0.61);
+    QCOMPARE(r->zoom()->motionSmoothness(), 0.84);
 
     // Style (incl. alpha on the ripple colour).
     QCOMPARE(r->style()->backgroundType(), QStringLiteral("gradient"));
@@ -225,6 +230,29 @@ void StudioProjectTest::dirtyFlagLifecycle()
     QScopedPointer<StudioProject> r(StudioProject::load(path));
     QVERIFY(!r.isNull());
     QCOMPARE(r->dirty(), false);           // a just-loaded document is clean
+}
+
+void StudioProjectTest::premiumDefaultsAndLegacyFallback()
+{
+    StyleModel style;
+    QCOMPARE(style.backgroundType(), QStringLiteral("gradient"));
+    QCOMPARE(style.gradientStart(), QColor(0x17, 0x15, 0x3B));
+    QCOMPARE(style.gradientEnd(), QColor(0x2E, 0x23, 0x6C));
+    QCOMPARE(style.paddingPct(), 10.5);
+    QCOMPARE(style.cornerRadius(), 16);
+    QCOMPARE(style.shadowBlur(), 56);
+    QCOMPARE(style.shadowOpacity(), 0.30);
+    QCOMPARE(style.shadowOffsetY(), 12);
+    QCOMPARE(style.fillMode(), QStringLiteral("fill"));
+    QCOMPARE(style.cursorScale(), 1.65);
+    QCOMPARE(style.clickRipple(), true);
+
+    // Missing additive keys in an old schema-1 project preserve polished
+    // compiled defaults rather than zeroing new settings.
+    style.fromJson(QJsonObject{{QStringLiteral("frameStyle"), QStringLiteral("minimal")}});
+    QCOMPARE(style.backgroundType(), QStringLiteral("gradient"));
+    QCOMPARE(style.paddingPct(), 10.5);
+    QCOMPARE(style.cursorScale(), 1.65);
 }
 
 QTEST_GUILESS_MAIN(StudioProjectTest)

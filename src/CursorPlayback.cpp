@@ -4,6 +4,8 @@
 
 #include <QImage>
 
+#include <algorithm>
+#include <cmath>
 #include <utility>
 
 // ---------------------------------------------------------------------------
@@ -79,11 +81,21 @@ void CursorPlayback::setTracks(const CursorTrack &cursor, const ClickTrack &clic
         m_cursor.append(s);
     m_invW = videoSize.width() > 0 ? 1.0 / videoSize.width() : 1.0;
     m_invH = videoSize.height() > 0 ? 1.0 / videoSize.height() : 1.0;
+    resetSpring();
+    buildMotionRuns();
 
     m_downs.clear();
+    m_downPositions.clear();
     for (const ClickEvent &e : clicks.events())
-        if (e.state == ClickEvent::Down)
+        if (e.state == ClickEvent::Down) {
             m_downs.append(e);
+            m_downPositions.append(m_cursor.isEmpty()
+                                       ? QPointF(e.x * m_invW, e.y * m_invH)
+                                       : renderedPositionAt(e.tMs));
+        }
+    // Click-position precomputation advanced the cache; playback starts from a
+    // clean canonical state so query order cannot influence later results.
+    resetSpring();
 
     m_shapes.clear();
     for (const CursorShape &sh : cursor.shapes()) {
@@ -107,6 +119,184 @@ void CursorPlayback::setTracks(const CursorTrack &cursor, const ClickTrack &clic
     const qint64 t = qint64(m_timeMs);
     m_timeMs = -1; // force setTime to re-emit
     setTime(t);
+}
+
+void CursorPlayback::resetSpring()
+{
+    m_springInitial = {};
+    int hint = 0;
+    m_springInitial.position = targetAt(0, &hint);
+    m_springInitial.sampleHint = hint;
+    m_springForward = m_springInitial;
+    m_springCheckpoints = {m_springInitial};
+}
+
+QPointF CursorPlayback::targetAt(qint64 timeUs, int *sampleHint) const
+{
+    const QList<CursorSample> &samples = m_cursor.samples();
+    if (samples.isEmpty())
+        return QPointF(0.5, 0.5);
+
+    int i = std::clamp(*sampleHint, 0, int(samples.size()) - 1);
+    while (i + 1 < samples.size() && samples.at(i + 1).tMs * 1000 <= timeUs)
+        ++i;
+    while (i > 0 && samples.at(i).tMs * 1000 > timeUs)
+        --i;
+    *sampleHint = i;
+
+    const CursorSample &a = samples.at(i);
+    double x = a.x;
+    double y = a.y;
+    if (i + 1 < samples.size() && timeUs > a.tMs * 1000) {
+        const CursorSample &b = samples.at(i + 1);
+        const qint64 spanUs = (b.tMs - a.tMs) * 1000;
+        const double f = spanUs > 0 ? double(timeUs - a.tMs * 1000) / spanUs : 0.0;
+        x += (b.x - a.x) * std::clamp(f, 0.0, 1.0);
+        y += (b.y - a.y) * std::clamp(f, 0.0, 1.0);
+    }
+    return QPointF(x * m_invW, y * m_invH);
+}
+
+void CursorPlayback::advanceSpring(SpringState *state, qint64 destinationUs) const
+{
+    constexpr double stiffness = 82.0;
+    constexpr double dampingRatio = 0.78;
+    constexpr double maxVelocity = 3.0;
+    const double omega = std::sqrt(stiffness);
+    const double damping = 2.0 * dampingRatio * omega;
+
+    while (state->timeUs < destinationUs) {
+        const qint64 nextUs = std::min(destinationUs,
+                                       state->timeUs + qint64(kSpringStepMs) * 1000);
+        const qint64 midpointUs = state->timeUs + (nextUs - state->timeUs) / 2;
+        const QPointF target = targetAt(midpointUs, &state->sampleHint);
+        const double dt = double(nextUs - state->timeUs) / 1.0e6;
+        QPointF acceleration(stiffness * (target.x() - state->position.x())
+                                 - damping * state->velocity.x(),
+                             stiffness * (target.y() - state->position.y())
+                                 - damping * state->velocity.y());
+        state->velocity += acceleration * dt;
+        const double speed = std::hypot(state->velocity.x(), state->velocity.y());
+        if (speed > maxVelocity) {
+            const double scale = maxVelocity / speed;
+            state->velocity *= scale;
+        }
+        state->position += state->velocity * dt;
+
+        const double oldX = state->position.x();
+        const double oldY = state->position.y();
+        state->position.setX(std::clamp(oldX, 0.0, 1.0));
+        state->position.setY(std::clamp(oldY, 0.0, 1.0));
+        if ((oldX < 0.0 && state->velocity.x() < 0.0)
+            || (oldX > 1.0 && state->velocity.x() > 0.0))
+            state->velocity.setX(0.0);
+        if ((oldY < 0.0 && state->velocity.y() < 0.0)
+            || (oldY > 1.0 && state->velocity.y() > 0.0))
+            state->velocity.setY(0.0);
+        state->timeUs = nextUs;
+    }
+}
+
+CursorPlayback::SpringState CursorPlayback::springStateFor(qint64 timeUs)
+{
+    const qint64 canonicalUs = timeUs - timeUs % (qint64(kSpringStepMs) * 1000);
+    if (canonicalUs >= m_springForward.timeUs) {
+        while (m_springForward.timeUs < canonicalUs) {
+            advanceSpring(&m_springForward,
+                          std::min(canonicalUs, m_springForward.timeUs
+                                                   + qint64(kSpringStepMs) * 1000));
+            if (m_springForward.timeUs > 0
+                && m_springForward.timeUs % (qint64(kCheckpointMs) * 1000) == 0
+                && m_springCheckpoints.last().timeUs != m_springForward.timeUs)
+                m_springCheckpoints.append(m_springForward);
+        }
+        return m_springForward;
+    }
+
+    const auto it = std::upper_bound(
+        m_springCheckpoints.cbegin(), m_springCheckpoints.cend(), canonicalUs,
+        [](qint64 time, const SpringState &checkpoint) { return time < checkpoint.timeUs; });
+    SpringState state = it == m_springCheckpoints.cbegin() ? m_springInitial : *(it - 1);
+    advanceSpring(&state, canonicalUs);
+    return state;
+}
+
+QPointF CursorPlayback::renderedPositionAt(qint64 timeMs)
+{
+    const qint64 timeUs = std::max<qint64>(0, timeMs) * 1000;
+    SpringState state = springStateFor(timeUs);
+    if (state.timeUs < timeUs)
+        advanceSpring(&state, timeUs);
+    return state.position;
+}
+
+void CursorPlayback::buildMotionRuns()
+{
+    m_motionRuns.clear();
+    const QList<CursorSample> &samples = m_cursor.samples();
+    if (samples.size() < 2)
+        return;
+
+    // Significant events require ~3 source-normalized pixels of accumulated
+    // travel. Nearby events merge, rejecting one-euro residual rest jitter while
+    // retaining slow deliberate movement.
+    constexpr double movementDistance = 0.0015;
+    constexpr qint64 mergeGapMs = 220;
+    QPointF anchor(samples.first().x * m_invW, samples.first().y * m_invH);
+    for (int i = 1; i < samples.size(); ++i) {
+        const QPointF point(samples.at(i).x * m_invW, samples.at(i).y * m_invH);
+        if (std::hypot(point.x() - anchor.x(), point.y() - anchor.y()) < movementDistance)
+            continue;
+        const qint64 eventMs = samples.at(i).tMs;
+        const qint64 startMs = std::max<qint64>(samples.first().tMs, eventMs - 80);
+        const qint64 endMs = eventMs + 120;
+        if (!m_motionRuns.isEmpty() && startMs - m_motionRuns.last().endMs <= mergeGapMs)
+            m_motionRuns.last().endMs = endMs;
+        else
+            m_motionRuns.append({startMs, endMs});
+        anchor = point;
+    }
+}
+
+qreal CursorPlayback::opacityAt(qint64 timeMs, bool recordedVisible) const
+{
+    if (!recordedVisible || m_cursor.isEmpty())
+        return 0.0;
+    const qint64 firstMs = m_cursor.samples().first().tMs;
+    const MotionRun *current = nullptr;
+    const MotionRun *previous = nullptr;
+    for (const MotionRun &run : m_motionRuns) {
+        if (run.startMs > timeMs)
+            break;
+        previous = current;
+        current = &run;
+    }
+
+    auto smooth = [](double value) {
+        const double x = std::clamp(value, 0.0, 1.0);
+        return x * x * (3.0 - 2.0 * x);
+    };
+    if (current && timeMs <= current->endMs) {
+        const qint64 priorEnd = previous ? previous->endMs : firstMs;
+        if (current->startMs - priorEnd > kIdleDelayMs + kIdleFadeMs)
+            return smooth(double(timeMs - current->startMs) / kWakeFadeMs);
+        return 1.0;
+    }
+
+    const qint64 lastMotion = current ? current->endMs : firstMs;
+    const qint64 idleMs = timeMs - lastMotion;
+    if (idleMs <= kIdleDelayMs)
+        return 1.0;
+    return 1.0 - smooth(double(idleMs - kIdleDelayMs) / kIdleFadeMs);
+}
+
+qreal CursorPlayback::pressScaleAt(qreal msSinceClick)
+{
+    if (msSinceClick < 0.0 || msSinceClick >= kRippleMs)
+        return 1.0;
+    // Immediate tactile dip, then one restrained near-critical rebound.
+    return 1.0 - 0.12 * std::exp(-msSinceClick / 105.0)
+                     * std::cos(msSinceClick * 0.026);
 }
 
 int CursorPlayback::sampleIndexFor(qint64 t) const
@@ -159,27 +349,28 @@ void CursorPlayback::setTime(qint64 tMs)
     if (timeMoved)
         emit timeChanged();
 
-    // --- cursor sample ---
+    const qreal oldNx = m_nx;
+    const qreal oldNy = m_ny;
+    const bool oldVisible = m_visible;
+    const qreal oldOpacity = m_opacity;
+    const qreal oldClickAge = m_msSinceClick;
+    const qreal oldPressScale = m_pressScale;
+
+    // --- recorded state + spring-rendered position ---
     const QList<CursorSample> &s = m_cursor.samples();
     const int n = s.size();
     if (n == 0) {
-        if (m_visible) { m_visible = false; emit sampleChanged(); }
+        m_visible = false;
+        m_opacity = 0.0;
     } else {
         const int i = sampleIndexFor(tMs);
         const CursorSample &a = s.at(i);
-        double x = a.x, y = a.y;
-        if (i + 1 < n && tMs > a.tMs) {
-            const CursorSample &b = s.at(i + 1);
-            const double sp = double(b.tMs - a.tMs);
-            const double f = sp > 0.0 ? double(tMs - a.tMs) / sp : 0.0;
-            x = a.x + (b.x - a.x) * f;
-            y = a.y + (b.y - a.y) * f;
-        }
-        m_nx = x * m_invW;
-        m_ny = y * m_invH;
-        m_visible = a.visible;              // state from the earlier neighbour
+        const QPointF rendered = renderedPositionAt(tMs);
+        m_nx = rendered.x();
+        m_ny = rendered.y();
+        m_opacity = opacityAt(tMs, a.visible);
+        m_visible = a.visible && m_opacity > 0.001;
         applyShape(a.shapeId);
-        emit sampleChanged();
     }
 
     // --- active ripples ---
@@ -190,15 +381,16 @@ void CursorPlayback::setTime(qint64 tMs)
     const qint64 windowStart = tMs - kRippleMs;
     m_activeScratch.clear();
     // Advance the hint past clicks that have fully expired.
-    while (m_downCursor < m_downs.size() && m_downs.at(m_downCursor).tMs < windowStart)
+    while (m_downCursor < m_downs.size() && m_downs.at(m_downCursor).tMs <= windowStart)
         ++m_downCursor;
     for (int j = m_downCursor; j < m_downs.size(); ++j) {
         const ClickEvent &e = m_downs.at(j);
         if (e.tMs > tMs)
             break;                          // future clicks (sorted) — done
-        if (e.tMs < windowStart)
+        if (e.tMs <= windowStart)
             continue;                       // just crossed the hint edge
-        m_activeScratch.append({e.x * m_invW, e.y * m_invH, e.tMs, j});
+        const QPointF position = m_downPositions.value(j, QPointF(e.x * m_invW, e.y * m_invH));
+        m_activeScratch.append({position.x(), position.y(), e.tMs, j});
     }
     m_ripples->setActive(m_activeScratch);
 
@@ -213,9 +405,21 @@ void CursorPlayback::setTime(qint64 tMs)
             if (m_downs.at(mid).tMs <= tMs) { idx = mid; lo = mid + 1; }
             else hi = mid - 1;
         }
-        if (idx >= 0)
-            m_msSinceClick = double(tMs - m_downs.at(idx).tMs);
+        if (idx >= 0) {
+            const qint64 age = tMs - m_downs.at(idx).tMs;
+            if (age < kRippleMs)
+                m_msSinceClick = double(age);
+        }
     }
+    m_pressScale = pressScaleAt(m_msSinceClick);
+
+    // Emit only after every time-derived field is coherent. This fixes the old
+    // one-frame-stale msSinceClick notification and avoids idle NOTIFY storms.
+    if (!qFuzzyCompare(oldNx, m_nx) || !qFuzzyCompare(oldNy, m_ny)
+        || oldVisible != m_visible || !qFuzzyCompare(oldOpacity, m_opacity)
+        || !qFuzzyCompare(oldClickAge, m_msSinceClick)
+        || !qFuzzyCompare(oldPressScale, m_pressScale))
+        emit sampleChanged();
 }
 
 QAbstractListModel *CursorPlayback::ripples() const

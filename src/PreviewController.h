@@ -1,4 +1,6 @@
 #pragma once
+#include "engine/KeyframeEngine.h"
+
 #include <QElapsedTimer>
 #include <QObject>
 #include <QRectF>
@@ -12,7 +14,7 @@ class CursorPlayback;
 // The editor preview's playback head. It smooths a per-frame `timeMs` between the
 // MediaPlayer's coarse position updates (QElapsedTimer, snapping on seek/pause),
 // and from that ONE time it derives the two things the composition needs — the
-// camera `zoomRect` (via the shared KeyframeEngine::evaluate) and the cursor
+// camera `zoomRect` (via the shared SpringCameraEvaluator) and the cursor
 // overlay state (CursorPlayback). Both are C++ properties recomputed on the clock
 // tick or on a keyframe edit, so QML never re-runs evaluate() per frame.
 //
@@ -44,13 +46,16 @@ public:
 signals:
     void timeMsChanged();
     void zoomRectChanged();
+    void playbackRangeEnded();
 
 private:
     void tick();
     void setTimeMs(qreal t);
     void recompute();   // zoomRect + cursor at m_timeMs
+    void resetCamera();
 
     ZoomTimeline *m_zoom = nullptr;
+    StudioProject *m_project = nullptr;
     CursorPlayback *m_cursor = nullptr;
     QString m_projectId;
     qint64 m_durationMs = 0;
@@ -62,4 +67,5 @@ private:
 
     qreal m_timeMs = 0.0;
     QRectF m_zoomRect = QRectF(0, 0, 1, 1);
+    SpringCameraEvaluator m_camera;
 };

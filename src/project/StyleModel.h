@@ -131,21 +131,21 @@ signals:
     void changed();
 
 private:
-    QString m_backgroundType = QStringLiteral("color");
+    QString m_backgroundType = QStringLiteral("gradient");
     QColor m_backgroundColor = QColor(0x17, 0x15, 0x3B);   // Primary
     QColor m_gradientStart = QColor(0x17, 0x15, 0x3B);     // Primary
-    QColor m_gradientEnd = QColor(0x43, 0x3D, 0x8B);       // Tertiary
+    QColor m_gradientEnd = QColor(0x2E, 0x23, 0x6C);       // Secondary
     QString m_wallpaperPath;
-    double m_paddingPct = 8.0;      // clamped [0, 30]
-    int m_cornerRadius = 12;
-    int m_shadowBlur = 48;
-    double m_shadowOpacity = 0.35;
-    int m_shadowOffsetY = 10;
+    double m_paddingPct = 10.5;     // clamped [0, 30]
+    int m_cornerRadius = 16;
+    int m_shadowBlur = 56;
+    double m_shadowOpacity = 0.30;
+    int m_shadowOffsetY = 12;
     QString m_frameStyle = QStringLiteral("none");
     QString m_frameTitle;
     QString m_aspect = QStringLiteral("source");
     QString m_fillMode = QStringLiteral("fill");
-    double m_cursorScale = 1.6;
+    double m_cursorScale = 1.65;
     QString m_cursorStyle = QStringLiteral("pointer");
     bool m_clickRipple = true;
     QColor m_rippleColor = QColor(0xC8, 0xAC, 0xD6);        // Accent

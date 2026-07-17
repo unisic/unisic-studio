@@ -1,7 +1,9 @@
 #include "AutozoomSelfTest.h"
 
+#include "CursorPlayback.h"
 #include "StudioApp.h"
 #include "engine/KeyframeEngine.h"
+#include "engine/TrajectoryMetrics.h"
 #include "project/ClickTrack.h"
 #include "project/CursorTrack.h"
 #include "project/StudioProject.h"
@@ -13,6 +15,7 @@
 #include <QByteArray>
 #include <QColor>
 #include <QCoreApplication>
+#include <QDir>
 #include <QElapsedTimer>
 #include <QEventLoop>
 #include <QFileInfo>
@@ -73,6 +76,12 @@ bool isFull(const QRectF &r)
 {
     return std::fabs(r.x()) < 1e-6 && std::fabs(r.y()) < 1e-6 && std::fabs(r.width() - 1.0) < 1e-6
         && std::fabs(r.height() - 1.0) < 1e-6;
+}
+
+double rectDelta(const QRectF &a, const QRectF &b)
+{
+    return std::max({std::fabs(a.x() - b.x()), std::fabs(a.y() - b.y()),
+                     std::fabs(a.width() - b.width()), std::fabs(a.height() - b.height())});
 }
 
 // mean per-channel abs difference over a WxH region of two RGB24 kW*kH buffers.
@@ -217,8 +226,9 @@ void AutozoomSelfTest::run(StudioApp *studio)
     const QByteArray s2 = serializeZoom(p);
     const bool deterministic = (s1 == s2);
 
-    const QRectF zAtCluster = KeyframeEngine::evaluate(p->zoom()->keyframes(), 4000);
-    const QRectF zBefore = KeyframeEngine::evaluate(p->zoom()->keyframes(), 1000);
+    SpringCameraEvaluator camera(p->zoom()->keyframes(), p->zoom()->motionSmoothness());
+    const QRectF zAtCluster = camera.evaluate(4000);
+    const QRectF zBefore = camera.evaluate(1000);
     const bool spanCoversCluster = kfCount > 0 && !isFull(zAtCluster) && isFull(zBefore);
 
     fprintf(stderr, "autozoom-test: keyframes=%d deterministic=%s spanCoversCluster=%s\n", kfCount,
@@ -226,6 +236,54 @@ void AutozoomSelfTest::run(StudioApp *studio)
     fprintf(stderr, "autozoom-test:   zoomRect@4000=(%.3f,%.3f,%.3f,%.3f) full@1000=%s\n",
             zAtCluster.x(), zAtCluster.y(), zAtCluster.width(), zAtCluster.height(),
             isFull(zBefore) ? "yes" : "no");
+
+    // --- production spring trajectory at preview cadence -------------------
+    QVector<TrajectorySample> trajectory;
+    SpringCameraEvaluator traceCamera(p->zoom()->keyframes(), p->zoom()->motionSmoothness());
+    CursorPlayback traceCursor(QStringLiteral("autozoom-trajectory"));
+    traceCursor.setTracks(p->cursorTrack(), p->clickTrack(), p->videoSize());
+    for (int frame = 0; frame <= 8 * 60; ++frame) {
+        const qint64 tMs = qint64(qRound(frame * 1000.0 / 60.0));
+        traceCursor.setTime(tMs);
+        trajectory.append({tMs, traceCamera.evaluate(tMs), traceCamera.targetAt(tMs),
+                           QPointF(traceCursor.nx(), traceCursor.ny()),
+                           traceCursor.cursorVisible()});
+    }
+    bool trajectoryDeterministic = true;
+    SpringCameraEvaluator checkCamera(p->zoom()->keyframes(), p->zoom()->motionSmoothness());
+    CursorPlayback checkCursor(QStringLiteral("autozoom-check"));
+    checkCursor.setTracks(p->cursorTrack(), p->clickTrack(), p->videoSize());
+    for (const TrajectorySample &sample : std::as_const(trajectory)) {
+        checkCursor.setTime(sample.tMs);
+        if (rectDelta(checkCamera.evaluate(sample.tMs), sample.cameraRect) > 1e-12
+            || std::hypot(checkCursor.nx() - sample.cursor.x(),
+                          checkCursor.ny() - sample.cursor.y()) > 1e-12) {
+            trajectoryDeterministic = false;
+            break;
+        }
+    }
+    const QString trajectoryPath = QDir(QDir::tempPath()).filePath(
+        QStringLiteral("unisic-studio-autozoom-trajectory.csv"));
+    const bool trajectoryWritten = writeTrajectoryCsv(trajectoryPath, trajectory);
+    const TrajectoryMetrics motion = analyzeTrajectory(trajectory, 4400, 4900);
+    const bool motionOk = motion.finite && motion.bounded && trajectoryDeterministic
+                          && trajectoryWritten && motion.maxCameraEdgeJump < 0.03
+                          && motion.maxCenterOvershootRatio < 0.02
+                          && motion.maxZoomOvershootRatio < 0.02
+                          && motion.holdDrift < 0.0025 && motion.holdRmsVelocity < 0.02;
+    fprintf(stderr,
+            "autozoom-test: trajectory=%s deterministic=%s bounded=%s samples=%lld\n",
+            qPrintable(trajectoryPath), trajectoryDeterministic ? "yes" : "no",
+            motion.bounded ? "yes" : "no", static_cast<long long>(trajectory.size()));
+    fprintf(stderr,
+            "autozoom-test: motion edgeJump=%.6f centerV=%.3f centerA=%.3f zoomV=%.3f "
+            "zoomA=%.3f overshoot(center=%.4f zoom=%.4f) hold(drift=%.6f rmsV=%.6f) "
+            "settleMax=%lldms\n",
+            motion.maxCameraEdgeJump, motion.maxCameraCenterVelocity,
+            motion.maxCameraCenterAcceleration, motion.maxZoomVelocity,
+            motion.maxZoomAcceleration, motion.maxCenterOvershootRatio,
+            motion.maxZoomOvershootRatio, motion.holdDrift, motion.holdRmsVelocity,
+            static_cast<long long>(motion.maxSettlingMs));
 
     // --- export with the camera + dot cursor + ripple on ---
     auto runExport = [&](const QString &out) -> bool {
@@ -297,8 +355,8 @@ void AutozoomSelfTest::run(StudioApp *studio)
         preDiff = regionDiff(fA1, fB1, 0, 0, 160, 160);
 
         // Expected on-screen cursor position at 4000 (evaluate + composition math).
-        const CursorSample cs = p->cursorTrack().sample(4000);
-        const double nx = cs.x / double(kW), ny = cs.y / double(kH);
+        traceCursor.setTime(4000);
+        const double nx = traceCursor.nx(), ny = traceCursor.ny();
         const double sx = (nx - zAtCluster.x()) / zAtCluster.width();
         const double sy = (ny - zAtCluster.y()) / zAtCluster.height();
         cxScreen = int(sx * kW);
@@ -315,7 +373,8 @@ void AutozoomSelfTest::run(StudioApp *studio)
                 cyScreen, green);
     }
 
-    const bool ok = spanCoversCluster && deterministic && okA && okB && pixelOk && preOk && greenOk;
+    const bool ok = spanCoversCluster && deterministic && motionOk && okA && okB && pixelOk
+                    && preOk && greenOk;
     fprintf(stderr, "autozoom-test: %s\n", ok ? "OK" : "FAIL");
     fflush(stderr);
     QCoreApplication::exit(ok ? 0 : 1);

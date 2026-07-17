@@ -31,6 +31,15 @@ Rectangle {
         ignoreUnknownSignals: true
         function onChanged() { panel._rev = panel._rev + 1 }
     }
+    Timer {
+        id: zoomIntensityDebounce
+        interval: 240
+        repeat: false
+        onTriggered: {
+            if (typeof editorProject !== "undefined" && editorProject)
+                Studio.regenerateZoom(editorProject)
+        }
+    }
     readonly property var kf: (selectedKeyframe >= 0 && _rev >= 0
                                && typeof editorProject !== "undefined" && editorProject)
                               ? editorProject.zoom.keyframeAt(selectedKeyframe) : null
@@ -53,9 +62,9 @@ Rectangle {
                                       ? editorProject.hasWebcam : false
 
     // Curated gradient presets (pure colour pairs — NO binary assets). First is
-    // the kit Primary→Tertiary default. Clicking a swatch sets both stops.
+    // the muted kit Primary→Secondary default. Clicking a swatch sets both stops.
     readonly property var _gradientPresets: [
-        { a: "#17153B", b: "#433D8B" },  // Kit (Primary → Tertiary)
+        { a: "#17153B", b: "#2E236C" },  // Kit (Primary -> Secondary)
         { a: "#0F2027", b: "#2C5364" },  // Midnight
         { a: "#FF512F", b: "#DD2476" },  // Sunset
         { a: "#2193B0", b: "#6DD5ED" },  // Ocean
@@ -420,6 +429,53 @@ Rectangle {
                 }
             }
 
+            // ---- Global camera motion ----------------------------------------
+            UCard {
+                width: parent.width
+                Column {
+                    width: parent.width
+                    spacing: motionHeader.expanded ? Theme.spacingM : 0
+                    SectionHeader {
+                        id: motionHeader
+                        title: qsTr("Motion")
+                        iconName: "media-playback-start"
+                    }
+                    Column {
+                        visible: motionHeader.expanded
+                        width: parent.width
+                        spacing: Theme.spacingM
+                        LabeledSlider {
+                            label: qsTr("Zoom intensity")
+                            from: 0; to: 1; stepSize: 0.05; decimals: 2
+                            value: (typeof editorProject !== "undefined" && editorProject)
+                                   ? editorProject.zoom.zoomIntensity : 0.72
+                            onMoved: (v) => {
+                                if (typeof editorProject === "undefined" || !editorProject) return
+                                editorProject.zoom.zoomIntensity = v
+                                zoomIntensityDebounce.restart()
+                            }
+                        }
+                        LabeledSlider {
+                            label: qsTr("Motion smoothness")
+                            from: 0; to: 1; stepSize: 0.05; decimals: 2
+                            value: (typeof editorProject !== "undefined" && editorProject)
+                                   ? editorProject.zoom.motionSmoothness : 0.68
+                            onMoved: (v) => {
+                                if (typeof editorProject !== "undefined" && editorProject)
+                                    editorProject.zoom.motionSmoothness = v
+                            }
+                        }
+                        Text {
+                            width: parent.width
+                            text: qsTr("Intensity changes framing and frequency. Smoothness changes spring response.")
+                            color: Theme.textTertiary
+                            font.pixelSize: Theme.fontS
+                            wrapMode: Text.WordWrap
+                        }
+                    }
+                }
+            }
+
             // ---- Background --------------------------------------------------
             UCard {
                 width: parent.width
@@ -638,12 +694,12 @@ Rectangle {
                                     onPicked: { if (sm) sm.cursorStyle = "system" }
                                 }
                                 CursorTile {
-                                    sid: "dot"; label: qsTr("Dot")
+                                    sid: "dot"; label: qsTr("Highlight")
                                     active: sm && sm.cursorStyle === "dot"
                                     onPicked: { if (sm) sm.cursorStyle = "dot" }
                                 }
                                 CursorTile {
-                                    sid: "circle"; label: qsTr("Circle")
+                                    sid: "circle"; label: qsTr("Precision")
                                     active: sm && sm.cursorStyle === "circle"
                                     onPicked: { if (sm) sm.cursorStyle = "circle" }
                                 }
@@ -653,7 +709,7 @@ Rectangle {
                         LabeledSlider {
                             label: qsTr("Size")
                             from: 1.0; to: 3.0; stepSize: 0.1; decimals: 1; suffix: "×"
-                            value: sm ? sm.cursorScale : 1.6
+                            value: sm ? sm.cursorScale : 1.65
                             onMoved: (v) => { if (sm) sm.cursorScale = v }
                         }
                         Row {
@@ -680,7 +736,7 @@ Rectangle {
                         }
                         Text {
                             width: parent.width
-                            text: qsTr("Clicks briefly shrink the cursor for press feedback.")
+                            text: qsTr("Cursor hides after idle. Clicks add a soft ring and tactile press.")
                             color: Theme.textTertiary
                             font.pixelSize: Theme.fontS
                             wrapMode: Text.WordWrap

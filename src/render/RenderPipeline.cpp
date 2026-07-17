@@ -4,7 +4,6 @@
 #include "CursorShapeProvider.h"
 #include "FrameDecoder.h"
 #include "VideoFrameItem.h"
-#include "engine/KeyframeEngine.h"
 #include "media/FfmpegUtil.h"
 #include "project/StyleModel.h"
 
@@ -146,6 +145,8 @@ void RenderPipeline::start(const Settings &settings)
 
 bool RenderPipeline::buildScene(QString *error)
 {
+    m_camera.setTimeline(m_s.keyframes, m_s.motionSmoothness);
+
     m_gl = new QOpenGLContext;
     if (!m_gl->create()) {
         *error = tr("Could not create an OpenGL context for rendering.");
@@ -192,7 +193,6 @@ bool RenderPipeline::buildScene(QString *error)
     m_root->setHeight(m_s.outH);
     m_root->setProperty("styleModel", QVariant::fromValue(static_cast<QObject *>(m_s.style)));
     m_root->setProperty("videoSize", QVariant::fromValue(QSizeF(m_s.videoSize)));
-    m_root->setProperty("timeMs", double(m_s.trimInMs));
 
     // The "desktopBlur" background needs a poster of the first frame. Extract it
     // ONCE here (synchronously — a single ffmpeg frame, ~100 ms) and hand the
@@ -231,7 +231,7 @@ bool RenderPipeline::buildScene(QString *error)
     m_root->setProperty("cursorPlayback",
                         QVariant::fromValue(static_cast<QObject *>(m_cursorPlayback)));
     // Camera at the first exported instant (subsequent frames set it in onFrame).
-    m_root->setProperty("zoomRect", KeyframeEngine::evaluate(m_s.keyframes, m_s.trimInMs));
+    m_root->setProperty("zoomRect", m_camera.evaluate(m_s.trimInMs));
     m_cursorPlayback->setTime(m_s.trimInMs);
 
     auto *slot = qobject_cast<QQuickItem *>(m_root->property("videoSlot").value<QObject *>());
@@ -358,11 +358,18 @@ void RenderPipeline::onFrame(int index, const QImage &frame)
     m_gl->makeCurrent(m_surface);
     m_videoItem->setFrame(frame);
     const qint64 tMs = m_s.trimInMs + qint64(qRound(double(index) * 1000.0 / m_s.fps));
-    m_root->setProperty("timeMs", double(tMs));
     // Camera + cursor for THIS frame — one evaluate path shared with the preview.
-    m_root->setProperty("zoomRect", KeyframeEngine::evaluate(m_s.keyframes, tMs));
+    const QRectF cameraRect = m_camera.evaluate(tMs);
+    m_root->setProperty("zoomRect", cameraRect);
     if (m_cursorPlayback)
         m_cursorPlayback->setTime(tMs);
+    if (m_s.collectMotionSamples) {
+        emit motionSampled(index, tMs, cameraRect,
+                           m_cursorPlayback
+                               ? QPointF(m_cursorPlayback->nx(), m_cursorPlayback->ny())
+                               : QPointF(0.5, 0.5),
+                           m_cursorPlayback && m_cursorPlayback->cursorVisible());
+    }
 
     m_rc->polishItems();
     m_rc->beginFrame();

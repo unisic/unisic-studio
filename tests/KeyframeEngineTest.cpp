@@ -57,6 +57,13 @@ static bool isFull(const QRectF &r)
         && std::fabs(r.width() - 1.0) < 1e-6 && std::fabs(r.height() - 1.0) < 1e-6;
 }
 
+static QRectF evaluate(const QVector<Keyframe> &keyframes, qint64 tMs,
+                       double smoothness = ZoomTimeline::DefaultMotionSmoothness)
+{
+    SpringCameraEvaluator evaluator(keyframes, smoothness);
+    return evaluator.evaluate(tMs);
+}
+
 // --- test ------------------------------------------------------------------
 
 class KeyframeEngineTest : public QObject
@@ -73,10 +80,15 @@ private slots:
     void twoNearClustersMerge();
     void idleTailReturnsToFull();
     void noClicksDwellFallback();
+    void trivialMotionDoesNotZoom();
+    void intensityScalesZoomAndFrequency();
+    void clickTargetKeepsActivityOffEdges();
     void pinnedRoutesAround();
     void nonMatchingAspectRects();
     void fillModeBaseRectAspect();
     void evaluateContinuity();
+    void springBoundsSettlingAndHold();
+    void springDeterministicAcrossSeekOrder();
     void determinism();
     void paramsJsonRoundtrip();
 };
@@ -139,18 +151,19 @@ void KeyframeEngineTest::singleClusterOneSpan()
     // Exactly one zoom span: one zoom-out to full (besides the t==0 opener).
     QCOMPARE(fullReturns(kfs), 1);
 
-    // In/out easing durations present.
+    // In/out target lead durations present.
+    const KeyframeEngine::Params defaults;
     bool haveZoomIn = false, haveZoomOut = false;
     for (const Keyframe &k : kfs) {
-        if (!isFull(k.rect) && k.easeInMs == 650) haveZoomIn = true;
-        if (isFull(k.rect) && k.tMs > 0 && k.easeInMs == 900) haveZoomOut = true;
+        if (!isFull(k.rect) && k.easeInMs == defaults.zoomInMs) haveZoomIn = true;
+        if (isFull(k.rect) && k.tMs > 0 && k.easeInMs == defaults.zoomOutMs) haveZoomOut = true;
     }
     QVERIFY(haveZoomIn);
     QVERIFY(haveZoomOut);
 
     // Every click is inside the zoomed span.
     for (qint64 t : {qint64(3000), qint64(3300), qint64(3600)})
-        QVERIFY(!isFull(KeyframeEngine::evaluate(kfs, t)));
+        QVERIFY(!isFull(evaluate(kfs, t)));
 }
 
 void KeyframeEngineTest::twoDistantClustersFullBetween()
@@ -170,9 +183,9 @@ void KeyframeEngineTest::twoDistantClustersFullBetween()
     checkInvariants(kfs, dur, kOutAspect);
 
     QCOMPARE(fullReturns(kfs), 2);                                  // two separate spans
-    QVERIFY(isFull(KeyframeEngine::evaluate(kfs, 8000)));           // full between them
-    QVERIFY(!isFull(KeyframeEngine::evaluate(kfs, 3300)));
-    QVERIFY(!isFull(KeyframeEngine::evaluate(kfs, 11300)));
+    QVERIFY(isFull(evaluate(kfs, 8000)));                           // full between them
+    QVERIFY(!isFull(evaluate(kfs, 3300)));
+    QVERIFY(!isFull(evaluate(kfs, 11300)));
 }
 
 void KeyframeEngineTest::twoNearClustersMerge()
@@ -188,7 +201,7 @@ void KeyframeEngineTest::twoNearClustersMerge()
     checkInvariants(kfs, dur, kOutAspect);
 
     QCOMPARE(fullReturns(kfs), 1);                                  // retargeted, not out+in
-    QVERIFY(!isFull(KeyframeEngine::evaluate(kfs, 3500)));          // stays zoomed between
+    QVERIFY(!isFull(evaluate(kfs, 3500)));                          // stays zoomed between
 }
 
 void KeyframeEngineTest::idleTailReturnsToFull()
@@ -203,8 +216,8 @@ void KeyframeEngineTest::idleTailReturnsToFull()
     const auto kfs = KeyframeEngine::generate(cur, clk, kVideo, dur, "16:9", {});
     checkInvariants(kfs, dur, kOutAspect);
 
-    QVERIFY(!isFull(KeyframeEngine::evaluate(kfs, 3000)));          // zoomed on the click
-    QVERIFY(isFull(KeyframeEngine::evaluate(kfs, 9000)));           // back to full on idle
+    QVERIFY(!isFull(evaluate(kfs, 3000)));                          // zoomed on the click
+    QVERIFY(isFull(evaluate(kfs, 9000)));                           // back to full on idle
 }
 
 void KeyframeEngineTest::noClicksDwellFallback()
@@ -224,7 +237,80 @@ void KeyframeEngineTest::noClicksDwellFallback()
     for (const Keyframe &k : kfs)
         if (!isFull(k.rect)) anyZoom = true;
     QVERIFY(anyZoom);
-    QVERIFY(!isFull(KeyframeEngine::evaluate(kfs, 3500)));          // zoomed during the dwell
+    QVERIFY(!isFull(evaluate(kfs, 3500)));                          // zoomed during the dwell
+}
+
+void KeyframeEngineTest::trivialMotionDoesNotZoom()
+{
+    CursorTrack cur;
+    // Tiny sub-threshold drift with no approach/leave evidence must not create a
+    // camera event merely because the pointer happened to sit still.
+    for (qint64 t = 0; t <= 8000; t += 16) {
+        CursorSample sample;
+        sample.tMs = t;
+        sample.x = 960.0 + std::sin(t / 200.0) * 0.4;
+        sample.y = 540.0 + std::cos(t / 170.0) * 0.4;
+        cur.append(sample);
+    }
+    const auto kfs = KeyframeEngine::generate(cur, ClickTrack{}, kVideo, 8000, "16:9", {});
+    QCOMPARE(kfs.size(), 1);
+    QVERIFY(isFull(kfs.first().rect));
+}
+
+void KeyframeEngineTest::intensityScalesZoomAndFrequency()
+{
+    CursorTrack cur;
+    moveLine(cur, 300, 300, 1600, 760, 0, 12000);
+    ClickTrack clicks;
+    click(clicks, 3000, 500, 400);
+    click(clicks, 6800, 1450, 700);
+
+    KeyframeEngine::Params off;
+    off.zoomIntensity = 0.0;
+    const auto offKfs = KeyframeEngine::generate(cur, clicks, kVideo, 12000, "16:9", off);
+    QCOMPARE(offKfs.size(), 1);
+    QVERIFY(isFull(offKfs.first().rect));
+
+    KeyframeEngine::Params low;
+    low.zoomIntensity = 0.30;
+    const auto lowKfs = KeyframeEngine::generate(cur, clicks, kVideo, 12000, "16:9", low);
+    KeyframeEngine::Params high;
+    high.zoomIntensity = 1.0;
+    const auto highKfs = KeyframeEngine::generate(cur, clicks, kVideo, 12000, "16:9", high);
+
+    auto tightestWidth = [](const QVector<Keyframe> &kfs) {
+        double width = 1.0;
+        for (const Keyframe &keyframe : kfs)
+            width = std::min(width, keyframe.rect.width());
+        return width;
+    };
+    QVERIFY(tightestWidth(lowKfs) > tightestWidth(highKfs) + 0.05);
+    QVERIFY(fullReturns(lowKfs) < fullReturns(highKfs)); // low intensity merges the gap
+}
+
+void KeyframeEngineTest::clickTargetKeepsActivityOffEdges()
+{
+    CursorTrack cur;
+    moveLine(cur, 900, 500, 1800, 120, 0, 5000);
+    ClickTrack clicks;
+    click(clicks, 3000, 1800, 120);
+    const auto kfs = KeyframeEngine::generate(cur, clicks, kVideo, 7000, "16:9", {});
+
+    QRectF target;
+    for (const Keyframe &keyframe : kfs) {
+        if (!isFull(keyframe.rect)) {
+            target = keyframe.rect;
+            break;
+        }
+    }
+    QVERIFY(target.isValid());
+    const QPointF point(1800.0 / kW, 120.0 / kH);
+    QVERIFY(target.contains(point));
+    const double rx = (point.x() - target.x()) / target.width();
+    const double ry = (point.y() - target.y()) / target.height();
+    QVERIFY(rx > 0.10 && rx < 0.90);
+    QVERIFY(ry > 0.10 && ry < 0.90);
+    QVERIFY(KeyframeEngine::zoomOfRect(kVideo, "16:9", target) <= 2.55 + 1e-9);
 }
 
 void KeyframeEngineTest::pinnedRoutesAround()
@@ -248,7 +334,7 @@ void KeyframeEngineTest::pinnedRoutesAround()
     for (const Keyframe &k : kfs)
         QVERIFY(k.tMs <= 6700 || k.tMs >= 7300);
 
-    QVERIFY(!isFull(KeyframeEngine::evaluate(kfs, 3000)));          // cluster still covered
+    QVERIFY(!isFull(evaluate(kfs, 3000)));                          // cluster still covered
 }
 
 void KeyframeEngineTest::nonMatchingAspectRects()
@@ -304,8 +390,8 @@ void KeyframeEngineTest::fillModeBaseRectAspect()
         QVERIFY(std::fabs(ratio - outAspect) / outAspect < 1e-6);
     }
     // The cluster is still zoomed in (tighter than the base crop).
-    const QRectF base = KeyframeEngine::evaluate(kfs, 0);
-    const QRectF atCluster = KeyframeEngine::evaluate(kfs, 3300);
+    const QRectF base = evaluate(kfs, 0);
+    const QRectF atCluster = evaluate(kfs, 3300);
     QVERIFY(atCluster.width() < base.width() - 1e-6);
 
     // Determinism holds in fill mode too.
@@ -341,9 +427,10 @@ void KeyframeEngineTest::evaluateContinuity()
 
     // Sampled continuity: no rect edge jumps more than 2% of the frame between
     // consecutive 16 ms samples.
-    QRectF prev = KeyframeEngine::evaluate(kfs, 0);
+    SpringCameraEvaluator evaluator(kfs);
+    QRectF prev = evaluator.evaluate(0);
     for (qint64 t = 16; t <= dur; t += 16) {
-        const QRectF r = KeyframeEngine::evaluate(kfs, t);
+        const QRectF r = evaluator.evaluate(t);
         QVERIFY(std::fabs(r.x() - prev.x()) < 0.02);
         QVERIFY(std::fabs(r.y() - prev.y()) < 0.02);
         QVERIFY(std::fabs(r.right() - prev.right()) < 0.02);
@@ -351,13 +438,107 @@ void KeyframeEngineTest::evaluateContinuity()
         prev = r;
     }
 
-    // Exact match at every keyframe instant.
-    for (const Keyframe &k : kfs) {
-        const QRectF r = KeyframeEngine::evaluate(kfs, k.tMs);
-        QVERIFY(std::fabs(r.x() - k.rect.x()) < 1e-9);
-        QVERIFY(std::fabs(r.y() - k.rect.y()) < 1e-9);
-        QVERIFY(std::fabs(r.width() - k.rect.width()) < 1e-9);
-        QVERIFY(std::fabs(r.height() - k.rect.height()) < 1e-9);
+    // No snap at authored keyframe times: the state remains continuous while the
+    // physical spring converges. The target itself is still exact and stable.
+    for (const Keyframe &k : kfs)
+        QCOMPARE(evaluator.targetAt(k.tMs), k.rect);
+}
+
+static QVector<Keyframe> springFixture()
+{
+    Keyframe base;
+    base.tMs = 0;
+    base.rect = QRectF(0, 0, 1, 1);
+    base.easeInMs = 0;
+
+    Keyframe zoom;
+    zoom.tMs = 1000;
+    zoom.rect = QRectF(0.46, 0.32, 0.42, 0.42);
+    zoom.easeInMs = 500; // target activates at 500 ms
+
+    Keyframe reset;
+    reset.tMs = 3200;
+    reset.rect = QRectF(0, 0, 1, 1);
+    reset.easeInMs = 900; // target activates at 2300 ms
+    return {base, zoom, reset};
+}
+
+static double rectError(const QRectF &a, const QRectF &b)
+{
+    return std::max({std::fabs(a.x() - b.x()), std::fabs(a.y() - b.y()),
+                     std::fabs(a.width() - b.width()), std::fabs(a.height() - b.height())});
+}
+
+void KeyframeEngineTest::springBoundsSettlingAndHold()
+{
+    const QVector<Keyframe> kfs = springFixture();
+    SpringCameraEvaluator evaluator(kfs);
+    const QRectF zoomTarget = kfs.at(1).rect;
+
+    QRectF previous = evaluator.evaluate(0);
+    double maxFrameJump = 0.0;
+    double minZoomWidth = 1.0;
+    for (qint64 t = 5; t <= 4500; t += 5) {
+        const QRectF rect = evaluator.evaluate(t);
+        QVERIFY(std::isfinite(rect.x()));
+        QVERIFY(std::isfinite(rect.y()));
+        QVERIFY(std::isfinite(rect.width()));
+        QVERIFY(std::isfinite(rect.height()));
+        QVERIFY2(rect.x() >= -1e-12 && rect.y() >= -1e-12,
+                 "spring camera escaped the frame at the top/left");
+        QVERIFY2(rect.right() <= 1.0 + 1e-12 && rect.bottom() <= 1.0 + 1e-12,
+                 "spring camera escaped the frame at the bottom/right");
+        QVERIFY(rect.width() > 0.0 && rect.height() > 0.0);
+        maxFrameJump = std::max(maxFrameJump, rectError(rect, previous));
+        if (t >= 500 && t < 2300)
+            minZoomWidth = std::min(minZoomWidth, rect.width());
+        previous = rect;
+    }
+
+    // 900 ms after target activation the near-critical spring is visually
+    // settled. Zoom spring retains only a tiny designed overshoot (<1.5%).
+    QVERIFY2(rectError(evaluator.evaluate(1400), zoomTarget) < 8e-4,
+             "camera did not settle on the zoom target within 900 ms");
+    QVERIFY(minZoomWidth < zoomTarget.width());
+    QVERIFY(minZoomWidth > zoomTarget.width() * 0.985);
+
+    // A held target becomes effectively motionless; no camera swimming.
+    const QRectF holdA = evaluator.evaluate(1750);
+    const QRectF holdB = evaluator.evaluate(2200);
+    QVERIFY(rectError(holdA, holdB) < 8e-5);
+
+    // 5 ms substeps are much tighter than a display frame; this guards any
+    // accidental target snap or unstable integration.
+    QVERIFY(maxFrameJump < 0.012);
+    QVERIFY(rectError(evaluator.evaluate(4200), QRectF(0, 0, 1, 1)) < 1e-8);
+}
+
+void KeyframeEngineTest::springDeterministicAcrossSeekOrder()
+{
+    const QVector<Keyframe> kfs = springFixture();
+    QVector<QPair<qint64, QRectF>> reference;
+    SpringCameraEvaluator sequential(kfs);
+    for (qint64 t = 0; t <= 4500; t += 17)
+        reference.append({t, sequential.evaluate(t)});
+    QVERIFY(sequential.cachedCheckpointCount() >= 9);
+
+    // Query cadence cannot affect state: each direct simulation must agree with
+    // the forward-cached 17 ms trajectory.
+    for (const auto &sample : std::as_const(reference)) {
+        SpringCameraEvaluator direct(kfs);
+        QVERIFY(rectError(direct.evaluate(sample.first), sample.second) < 1e-12);
+    }
+
+    // Backward scrubs restore a checkpoint then replay; later forward values are
+    // byte-stable within floating-point arithmetic.
+    SpringCameraEvaluator scrubbed(kfs);
+    const qint64 order[] = {4100, 650, 2992, 120, 4500, 1800, 2300, 999, 3200};
+    for (qint64 t : order) {
+        SpringCameraEvaluator direct(kfs);
+        const QRectF expected = direct.evaluate(t);
+        const QRectF actual = scrubbed.evaluate(t);
+        QVERIFY(rectError(actual, expected) < 1e-12);
+        QCOMPARE(scrubbed.evaluate(t), actual); // repeated time is idempotent
     }
 }
 
@@ -390,6 +571,8 @@ void KeyframeEngineTest::paramsJsonRoundtrip()
     p.leadInMs = 777;
     p.deadZoneFrac = 0.42;
     p.idleSpeedFracPerSec = 0.033;
+    p.zoomIntensity = 0.37;
+    p.motionSmoothness = 0.91;
 
     const KeyframeEngine::Params r = KeyframeEngine::Params::fromJson(p.toJson());
     QCOMPARE(r.clickClusterGapMs, p.clickClusterGapMs);
@@ -407,6 +590,8 @@ void KeyframeEngineTest::paramsJsonRoundtrip()
     QCOMPARE(r.deadZoneFrac, p.deadZoneFrac);
     QCOMPARE(r.dwellMinMs, p.dwellMinMs);
     QCOMPARE(r.dwellSpeedFracPerSec, p.dwellSpeedFracPerSec);
+    QCOMPARE(r.zoomIntensity, p.zoomIntensity);
+    QCOMPARE(r.motionSmoothness, p.motionSmoothness);
 }
 
 QTEST_GUILESS_MAIN(KeyframeEngineTest)

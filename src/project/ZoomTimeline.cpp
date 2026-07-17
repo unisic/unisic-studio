@@ -3,6 +3,16 @@
 #include <QJsonArray>
 #include <algorithm>
 
+namespace {
+
+double normalizedParam(const QJsonObject &params, const char *name, double fallback)
+{
+    const double value = params.value(QLatin1String(name)).toDouble(fallback);
+    return qBound(0.0, value, 1.0);
+}
+
+} // namespace
+
 ZoomTimeline::ZoomTimeline(QObject *parent)
     : QAbstractListModel(parent)
 {
@@ -96,6 +106,28 @@ void ZoomTimeline::addKeyframes(const QList<Keyframe> &kfs)
     emit changed();
 }
 
+void ZoomTimeline::replaceAutoKeyframes(const QList<Keyframe> &keyframes)
+{
+    QList<Keyframe> next;
+    next.reserve(m_keyframes.size() + keyframes.size());
+    for (const Keyframe &keyframe : std::as_const(m_keyframes)) {
+        if (keyframe.source == Auto && !keyframe.locked)
+            continue;
+        next.append(keyframe);
+    }
+    next.append(keyframes);
+    std::stable_sort(next.begin(), next.end(),
+                     [](const Keyframe &a, const Keyframe &b) { return a.tMs < b.tMs; });
+
+    const bool countChangedValue = next.size() != m_keyframes.size();
+    beginResetModel();
+    m_keyframes = std::move(next);
+    endResetModel();
+    if (countChangedValue)
+        emit countChanged();
+    emit changed();
+}
+
 void ZoomTimeline::removeAt(int index)
 {
     if (index < 0 || index >= m_keyframes.size())
@@ -181,15 +213,68 @@ void ZoomTimeline::clearAuto()
 
 void ZoomTimeline::clear()
 {
-    if (m_keyframes.isEmpty()) {
-        m_autoParams = {};
+    const bool hadFrames = !m_keyframes.isEmpty();
+    const bool hadParams = !m_autoParams.isEmpty();
+    if (!hadFrames && !hadParams)
         return;
+
+    const double oldIntensity = zoomIntensity();
+    const double oldSmoothness = motionSmoothness();
+    if (hadFrames) {
+        beginResetModel();
+        m_keyframes.clear();
+        endResetModel();
+        emit countChanged();
     }
-    beginResetModel();
-    m_keyframes.clear();
     m_autoParams = {};
-    endResetModel();
-    emit countChanged();
+    if (!qFuzzyCompare(oldIntensity, zoomIntensity()))
+        emit zoomIntensityChanged();
+    if (!qFuzzyCompare(oldSmoothness, motionSmoothness()))
+        emit motionSmoothnessChanged();
+    emit changed();
+}
+
+double ZoomTimeline::zoomIntensity() const
+{
+    return normalizedParam(m_autoParams, "zoomIntensity", DefaultZoomIntensity);
+}
+
+double ZoomTimeline::motionSmoothness() const
+{
+    return normalizedParam(m_autoParams, "motionSmoothness", DefaultMotionSmoothness);
+}
+
+void ZoomTimeline::setZoomIntensity(double value)
+{
+    value = qBound(0.0, value, 1.0);
+    if (qFuzzyCompare(zoomIntensity(), value))
+        return;
+    m_autoParams.insert(QStringLiteral("zoomIntensity"), value);
+    emit zoomIntensityChanged();
+    emit changed();
+}
+
+void ZoomTimeline::setMotionSmoothness(double value)
+{
+    value = qBound(0.0, value, 1.0);
+    if (qFuzzyCompare(motionSmoothness(), value))
+        return;
+    m_autoParams.insert(QStringLiteral("motionSmoothness"), value);
+    emit motionSmoothnessChanged();
+    emit changed();
+}
+
+void ZoomTimeline::setAutoParams(const QJsonObject &params)
+{
+    if (m_autoParams == params)
+        return;
+    const double oldIntensity = zoomIntensity();
+    const double oldSmoothness = motionSmoothness();
+    m_autoParams = params;
+    if (!qFuzzyCompare(oldIntensity, zoomIntensity()))
+        emit zoomIntensityChanged();
+    if (!qFuzzyCompare(oldSmoothness, motionSmoothness()))
+        emit motionSmoothnessChanged();
     emit changed();
 }
 
@@ -217,6 +302,8 @@ QJsonObject ZoomTimeline::toJson() const
 
 void ZoomTimeline::fromJson(const QJsonObject &o)
 {
+    const double oldIntensity = zoomIntensity();
+    const double oldSmoothness = motionSmoothness();
     beginResetModel();
     m_keyframes.clear();
     for (const QJsonValue &v : o.value(QStringLiteral("keyframes")).toArray()) {
@@ -240,5 +327,9 @@ void ZoomTimeline::fromJson(const QJsonObject &o)
     m_autoParams = o.value(QStringLiteral("autoParams")).toObject();
     endResetModel();
     emit countChanged();
+    if (!qFuzzyCompare(oldIntensity, zoomIntensity()))
+        emit zoomIntensityChanged();
+    if (!qFuzzyCompare(oldSmoothness, motionSmoothness()))
+        emit motionSmoothnessChanged();
     emit changed();
 }

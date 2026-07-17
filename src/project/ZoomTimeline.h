@@ -20,6 +20,10 @@ class ZoomTimeline : public QAbstractListModel
 {
     Q_OBJECT
     Q_PROPERTY(int count READ rowCount NOTIFY countChanged)
+    Q_PROPERTY(double zoomIntensity READ zoomIntensity WRITE setZoomIntensity
+               NOTIFY zoomIntensityChanged)
+    Q_PROPERTY(double motionSmoothness READ motionSmoothness WRITE setMotionSmoothness
+               NOTIFY motionSmoothnessChanged)
 
 public:
     enum Source { Auto = 0, Manual = 1 };
@@ -59,6 +63,10 @@ public:
     // matches per-item addKeyframe(): existing rows keep their place, appended rows
     // follow in argument order.
     void addKeyframes(const QList<Keyframe> &kfs);
+    // Replace unlocked Auto rows with one generated batch under a single model
+    // reset. Manual and locked rows survive. Used by regeneration to avoid two
+    // preview/cache resets (clear + insert).
+    void replaceAutoKeyframes(const QList<Keyframe> &kfs);
 
     Q_INVOKABLE void removeAt(int index);
 
@@ -82,16 +90,25 @@ public:
     const QList<Keyframe> &keyframes() const { return m_keyframes; }
     void clear();
 
-    // Opaque parameters the auto-generator stashes (zoom strength, dwell, …).
-    // The model treats it as a black box and only round-trips it through JSON.
+    // Generator parameters round-trip as one JSON object. The two primary motion
+    // controls have typed properties for QML; all lower-level tuning remains
+    // opaque to the model.
+    static constexpr double DefaultZoomIntensity = 0.72;
+    static constexpr double DefaultMotionSmoothness = 0.68;
+    double zoomIntensity() const;
+    double motionSmoothness() const;
+    void setZoomIntensity(double value);
+    void setMotionSmoothness(double value);
     QJsonObject autoParams() const { return m_autoParams; }
-    void setAutoParams(const QJsonObject &p) { m_autoParams = p; emit changed(); }
+    void setAutoParams(const QJsonObject &p);
 
     QJsonObject toJson() const;
     void fromJson(const QJsonObject &o);
 
 signals:
     void countChanged();
+    void zoomIntensityChanged();
+    void motionSmoothnessChanged();
     // Coalesced "something mutated" pulse; StudioProject hangs dirty-tracking
     // off it rather than subscribing to every fine-grained model signal.
     void changed();
