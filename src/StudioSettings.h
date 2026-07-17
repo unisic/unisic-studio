@@ -31,6 +31,15 @@ class StudioSettings : public QObject
     Q_PROPERTY(int windowWidth READ windowWidth WRITE setWindowWidth NOTIFY windowWidthChanged)
     Q_PROPERTY(int windowHeight READ windowHeight WRITE setWindowHeight NOTIFY windowHeightChanged)
 
+    // --- recording (M2) ---
+    Q_PROPERTY(int recordFps READ recordFps WRITE setRecordFps NOTIFY recordFpsChanged)
+    Q_PROPERTY(int masterCrf READ masterCrf WRITE setMasterCrf NOTIFY masterCrfChanged)
+    Q_PROPERTY(bool recordSystemAudio READ recordSystemAudio WRITE setRecordSystemAudio NOTIFY recordSystemAudioChanged)
+    Q_PROPERTY(bool recordMicrophone READ recordMicrophone WRITE setRecordMicrophone NOTIFY recordMicrophoneChanged)
+    Q_PROPERTY(int recordCountdownSec READ recordCountdownSec WRITE setRecordCountdownSec NOTIFY recordCountdownSecChanged)
+    Q_PROPERTY(int recordMaxDurationSec READ recordMaxDurationSec WRITE setRecordMaxDurationSec NOTIFY recordMaxDurationSecChanged)
+    Q_PROPERTY(bool clickCaptureEnabled READ clickCaptureEnabled WRITE setClickCaptureEnabled NOTIFY clickCaptureEnabledChanged)
+
 public:
     explicit StudioSettings(QObject *parent = nullptr) : QObject(parent)
     {
@@ -63,10 +72,28 @@ public:
     U_SETTING(int, windowWidth, setWindowWidth, "windowWidth", 1280)
     U_SETTING(int, windowHeight, setWindowHeight, "windowHeight", 800)
 
+    // Recording (M2). Bare top-level keys, no "general" group (the [%General]
+    // landmine). recordMaxDurationSec 0 = unlimited; masterCrf is x264 CRF (lower
+    // is higher quality); recordFps is the sampler's fixed CFR rate.
+    U_SETTING(int, recordFps, setRecordFps, "recordFps", 60)
+    U_SETTING(int, masterCrf, setMasterCrf, "masterCrf", 17)
+    U_SETTING(bool, recordSystemAudio, setRecordSystemAudio, "recordSystemAudio", true)
+    U_SETTING(bool, recordMicrophone, setRecordMicrophone, "recordMicrophone", false)
+    U_SETTING(int, recordCountdownSec, setRecordCountdownSec, "recordCountdownSec", 3)
+    U_SETTING(int, recordMaxDurationSec, setRecordMaxDurationSec, "recordMaxDurationSec", 0)
+    U_SETTING(bool, clickCaptureEnabled, setClickCaptureEnabled, "clickCaptureEnabled", true)
+
 signals:
     void projectsDirectoryChanged();
     void windowWidthChanged();
     void windowHeightChanged();
+    void recordFpsChanged();
+    void masterCrfChanged();
+    void recordSystemAudioChanged();
+    void recordMicrophoneChanged();
+    void recordCountdownSecChanged();
+    void recordMaxDurationSecChanged();
+    void clickCaptureEnabledChanged();
 
 private:
     QSettings m_s{UnisicKit::filePath(), QSettings::IniFormat};
