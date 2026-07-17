@@ -3,6 +3,7 @@
 #include <QObject>
 #include <QSize>
 #include <QString>
+#include <QVariantList>
 
 #include "ClickTrack.h"
 #include "CursorTrack.h"
@@ -112,6 +113,10 @@ public:
 
     ZoomTimeline *zoom() const { return m_zoom; }
     StyleModel *style() const { return m_style; }
+
+    // Down-event times (ms) for the timeline's click markers. Immutable for a
+    // loaded project, so QML can bind it once.
+    Q_INVOKABLE QVariantList clickDownTimesMs() const;
 
     // --- export settings (opaque passthrough for the render layer) ---
     QJsonObject exportSettings() const { return m_exportSettings; }

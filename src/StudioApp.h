@@ -117,6 +117,26 @@ public:
     Q_INVOKABLE void togglePauseRecording();
     Q_INVOKABLE void cancelRecording();
 
+    // --- auto-zoom (M3) --------------------------------------------------------
+    // Re-run the auto-camera with the project's current Params, preserving Manual
+    // and locked keyframes (clearAuto → generate(pinned) → insert). Also the
+    // entry point the project-open path uses to seed a fresh recording.
+    Q_INVOKABLE void regenerateZoom(StudioProject *project);
+
+    // Add a Manual zoom keyframe at tMs framed on (cx,cy) with linear factor
+    // `zoom` (>=1); geometry matches the auto camera exactly. Returns its row.
+    Q_INVOKABLE int addManualZoom(StudioProject *project, qint64 tMs, double cx, double cy,
+                                  double zoom);
+    // Add a Manual full-frame (reset) keyframe at tMs. Returns its row.
+    Q_INVOKABLE int addResetZoom(StudioProject *project, qint64 tMs);
+    // Rescale keyframe `index`'s rect around its centre to linear factor `zoom`.
+    Q_INVOKABLE void setZoomFactor(StudioProject *project, int index, double zoom);
+    // Shift keyframe `index`'s camera centre by (dxFrac,dyFrac) of the frame,
+    // clamped so the rect stays inside [0,1] (its size is preserved).
+    Q_INVOKABLE void nudgeZoom(StudioProject *project, int index, double dxFrac, double dyFrac);
+    // The linear zoom factor of keyframe `index` (seeds the inspector slider).
+    Q_INVOKABLE double zoomFactorOf(StudioProject *project, int index);
+
     // Re-probe click-capture (libinput) availability on demand; updates
     // inputPermissionStatus. Cheap, but not free — call it when the UI needs it,
     // not on a timer.
@@ -142,6 +162,11 @@ signals:
 private:
     bool doSave(StudioProject *project, const QString &path);
     QString defaultSavePath(StudioProject *project) const;
+
+    // Auto-camera generation. onlyIfEmpty: skip when the timeline already has
+    // keyframes (the open-path seeding rule). Runs synchronously — measured well
+    // under the 50 ms budget even on a 10-min track (see --autozoom-test).
+    void generateZoom(StudioProject *project, bool onlyIfEmpty);
 
     void ensureRecorder();                 // lazy construct + wire on first use
     void setRecorderState(RecorderState s);

@@ -1,8 +1,10 @@
 #include "StudioApp.h"
+#include "AutozoomSelfTest.h"
 #include "project/StudioProject.h"
 #include "project/StyleModel.h"
 #include "media/VideoProbe.h"
 #include "render/ExportController.h"
+#include "render/CursorShapeProvider.h" // image://cursorshape (cursor overlay)
 #include <ConfigPath.h>              // kit: UnisicKit::setConfigName
 #include <theme/IconImageProvider.h> // kit: image://icon provider
 #include <QApplication>
@@ -174,6 +176,8 @@ int main(int argc, char *argv[])
     // provider shares that one instance lazily via ThemeController::instance(),
     // so nullptr here is correct (matches Unisic).
     engine.addImageProvider(QStringLiteral("icon"), new IconImageProvider(nullptr));
+    // Cursor overlay bitmaps (recorded shapes) served by project id + shape id.
+    engine.addImageProvider(QStringLiteral("cursorshape"), new CursorShapeProvider());
     engine.rootContext()->setContextProperty(QStringLiteral("Studio"), &studio);
     // Give the facade the engine so it can build per-window editor QQmlContexts.
     studio.setEngine(&engine);
@@ -343,6 +347,9 @@ int main(int argc, char *argv[])
                 if (mainWin)
                     mainWin->setProperty("currentPage", idx);
             });
+        }
+        if (args.contains(QStringLiteral("--autozoom-test"))) {
+            QTimer::singleShot(0, &studio, [&studio] { AutozoomSelfTest::run(&studio); });
         }
         if (args.contains(QStringLiteral("--hud-test"))) {
             QTimer::singleShot(0, &app, [&studio] {

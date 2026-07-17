@@ -58,6 +58,34 @@ Window {
                                   : (editorProject ? editorProject.durationMs : 0)
     readonly property bool hasPlayback: Studio.capVideoPlayback && videoLoader.item !== null
 
+    // The selected zoom keyframe (drives the inspector's keyframe section and the
+    // timeline highlight); -1 == none. Row indices shift when keyframes are
+    // added/removed, so a count change clears the selection.
+    property int selectedKeyframe: -1
+
+    // One seek entry point: with live playback it moves the player (whose
+    // position feeds preview.sync); without it, it snaps the preview clock.
+    function seekTo(ms) {
+        if (hasPlayback) videoLoader.item.seek(ms)
+        else if (typeof preview !== "undefined" && preview) preview.snap(ms)
+    }
+
+    // Re-anchor the smoothing clock whenever the player reports a new position or
+    // toggles play/pause; the clock interpolates between these coarse updates.
+    Connections {
+        target: videoLoader.item
+        ignoreUnknownSignals: true
+        function onPositionMsChanged() { preview.sync(videoLoader.item.positionMs, videoLoader.item.isPlaying) }
+        function onIsPlayingChanged() { preview.sync(videoLoader.item.positionMs, videoLoader.item.isPlaying) }
+    }
+
+    // Keyframe row indices are unstable across add/remove — drop the selection.
+    Connections {
+        target: editorProject ? editorProject.zoom : null
+        ignoreUnknownSignals: true
+        function onCountChanged() { editorWindow.selectedKeyframe = -1 }
+    }
+
     // Ctrl+S saves (silent after first save).
     Shortcut {
         sequence: StandardKey.Save
@@ -136,6 +164,8 @@ Window {
         width: 300
         anchors { top: titleBar.bottom; right: parent.right; bottom: parent.bottom }
         styleModel: editorProject ? editorProject.style : null
+        selectedKeyframe: editorWindow.selectedKeyframe
+        onDeselect: editorWindow.selectedKeyframe = -1
     }
 
     // ---- Left: toolbar + canvas + transport --------------------------------
@@ -217,7 +247,7 @@ Window {
         Item {
             id: canvasArea
             anchors {
-                top: toolbar.bottom; left: parent.left; right: parent.right; bottom: transport.top
+                top: toolbar.bottom; left: parent.left; right: parent.right; bottom: timeline.top
                 topMargin: Theme.spacingM
                 bottomMargin: Theme.spacingM
             }
@@ -228,6 +258,11 @@ Window {
                 anchors.margins: Theme.spacingL
                 styleModel: editorProject ? editorProject.style : null
                 videoSize: editorProject ? editorProject.videoSize : Qt.size(1920, 1080)
+                // Camera + cursor, both from the one preview head (evaluate is C++).
+                zoomRect: (typeof preview !== "undefined" && preview) ? preview.zoomRect
+                                                                      : Qt.rect(0, 0, 1, 1)
+                cursorPlayback: (typeof preview !== "undefined" && preview) ? preview.cursor : null
+                timeMs: (typeof preview !== "undefined" && preview) ? preview.timeMs : 0
             }
 
             // Live video (only when QtMultimedia is present) parented into the
@@ -256,6 +291,73 @@ Window {
                     font.pixelSize: Theme.fontM
                 }
             }
+
+            // Canvas interaction: click = add/adjust a Manual zoom at the playhead
+            // centred on the clicked point; double-click = reset to full frame. The
+            // 220 ms timer keeps the single-click from firing on a double-click.
+            MouseArea {
+                id: canvasClick
+                anchors.fill: parent
+                enabled: editorProject !== null
+                hoverEnabled: true
+                acceptedButtons: Qt.LeftButton
+                function normAt(mx, my) {
+                    var p = comp.videoSlot.mapFromItem(canvasClick, mx, my)
+                    return Qt.point(p.x / Math.max(1, comp.videoSlot.width),
+                                    p.y / Math.max(1, comp.videoSlot.height))
+                }
+                Timer {
+                    id: addTimer
+                    interval: 220
+                    property real nx: 0.5
+                    property real ny: 0.5
+                    onTriggered: {
+                        var row = Studio.addManualZoom(editorProject, Math.round(preview.timeMs),
+                                                       nx, ny, 1.8)
+                        if (row >= 0) editorWindow.selectedKeyframe = row
+                    }
+                }
+                onClicked: (m) => {
+                    var n = normAt(m.x, m.y)
+                    if (n.x < 0 || n.x > 1 || n.y < 0 || n.y > 1) return  // outside video
+                    addTimer.nx = n.x; addTimer.ny = n.y
+                    addTimer.restart()
+                }
+                onDoubleClicked: (m) => {
+                    addTimer.stop()
+                    var row = Studio.addResetZoom(editorProject, Math.round(preview.timeMs))
+                    if (row >= 0) editorWindow.selectedKeyframe = row
+                }
+            }
+
+            // Help hint for the canvas gesture.
+            Text {
+                anchors.left: parent.left
+                anchors.bottom: parent.bottom
+                anchors.leftMargin: Theme.spacingS
+                text: qsTr("Click: add zoom · Double-click: reset")
+                color: Theme.textTertiary
+                font.pixelSize: Theme.fontS
+                opacity: canvasClick.containsMouse ? 0.9 : 0.0
+                Behavior on opacity { NumberAnimation { duration: Theme.animFast } }
+            }
+        }
+
+        // Timeline strip (ruler, playhead, trim, keyframes, clicks, actions).
+        Timeline {
+            id: timeline
+            anchors { left: parent.left; right: parent.right; bottom: transport.top }
+            anchors.leftMargin: Theme.spacingL
+            anchors.rightMargin: Theme.spacingL
+            anchors.bottomMargin: Theme.spacingS
+            height: 110
+            project: editorProject
+            durationMs: editorWindow.curDur
+            playheadMs: (typeof preview !== "undefined" && preview) ? preview.timeMs
+                                                                    : editorWindow.curPos
+            selectedIndex: editorWindow.selectedKeyframe
+            onSeek: (ms) => editorWindow.seekTo(ms)
+            onSelectKeyframe: (index) => editorWindow.selectedKeyframe = index
         }
 
         // Transport
@@ -289,7 +391,7 @@ Window {
                 from: 0
                 to: Math.max(1, editorWindow.curDur)
                 value: editorWindow.curPos
-                onMoved: (v) => { if (videoLoader.item) videoLoader.item.seek(v) }
+                onMoved: (v) => editorWindow.seekTo(v)
             }
 
             Text {

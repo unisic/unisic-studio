@@ -41,6 +41,24 @@ QHash<int, QByteArray> ZoomTimeline::roleNames() const
     };
 }
 
+QVariantMap ZoomTimeline::keyframeAt(int index) const
+{
+    if (index < 0 || index >= m_keyframes.size())
+        return {};
+    const Keyframe &kf = m_keyframes.at(index);
+    return QVariantMap{
+        {QStringLiteral("tMs"), double(kf.tMs)},
+        {QStringLiteral("x"), kf.rect.x()},
+        {QStringLiteral("y"), kf.rect.y()},
+        {QStringLiteral("w"), kf.rect.width()},
+        {QStringLiteral("h"), kf.rect.height()},
+        {QStringLiteral("easeInMs"), kf.easeInMs},
+        {QStringLiteral("easeOutMs"), kf.easeOutMs},
+        {QStringLiteral("source"), int(kf.source)},
+        {QStringLiteral("locked"), kf.locked},
+    };
+}
+
 int ZoomTimeline::insertionRow(qint64 t) const
 {
     // upper_bound: land AFTER equal-tMs keyframes so ties keep insertion order.

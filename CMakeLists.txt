@@ -75,6 +75,22 @@ qt_add_executable(unisic-studio
     src/render/FrameDecoder.h src/render/FrameDecoder.cpp
     src/render/RenderPipeline.h src/render/RenderPipeline.cpp
     src/render/ExportController.h src/render/ExportController.cpp
+    # Auto-zoom engine (M3): cursor/click tracks -> ZoomTimeline of Auto keyframes;
+    # pure Core+Gui logic, no QML. Wired into the app by StudioApp's generate()/
+    # evaluate() and the preview/export camera. Also compiled by the two offscreen
+    # engine unit tests below.
+    src/engine/Easing.h
+    src/engine/CursorSmoother.h src/engine/CursorSmoother.cpp
+    src/engine/KeyframeEngine.h src/engine/KeyframeEngine.cpp
+    # Preview head + cursor overlay (M3). PreviewController smooths time and
+    # evaluates the camera/cursor for the live editor; CursorPlayback samples the
+    # cursor + click ripples for a given time; CursorShapeProvider serves the
+    # recorded cursor bitmaps (image://cursorshape) to preview AND export.
+    src/PreviewController.h src/PreviewController.cpp
+    src/CursorPlayback.h src/CursorPlayback.cpp
+    src/render/CursorShapeProvider.h src/render/CursorShapeProvider.cpp
+    # Hidden dev aid: end-to-end auto-zoom + overlay export self-test (--autozoom-test).
+    src/AutozoomSelfTest.h src/AutozoomSelfTest.cpp
 )
 
 # qt_standard_project_setup bakes an $ORIGIN install-RPATH into the binary;
@@ -123,12 +139,14 @@ qt_add_qml_module(unisic-studio
         qml/EditorWindow.qml
         qml/InspectorPanel.qml
         qml/ExportDialog.qml
+        qml/Timeline.qml
         qml/composition/CompositionRoot.qml
+        qml/composition/CursorOverlay.qml
         qml/composition/PreviewVideo.qml
 )
 
 # qmltyperegistration includes QML_ELEMENT headers by basename.
-target_include_directories(unisic-studio PRIVATE src src/project src/media src/render src/capture)
+target_include_directories(unisic-studio PRIVATE src src/project src/media src/render src/capture src/engine)
 
 # Optional click capture: link libinput/libudev and flip HAVE_LIBINPUT only when
 # both were found. The capture sources always compile; this just enables the real
@@ -266,6 +284,19 @@ if(BUILD_TESTING)
     target_link_libraries(studio_keyframe_engine_test PRIVATE Qt6::Core Qt6::Gui Qt6::Test)
     target_include_directories(studio_keyframe_engine_test PRIVATE src/engine src/project)
     add_test(NAME studio_keyframe_engine_test COMMAND studio_keyframe_engine_test)
+
+    # CursorPlayback: the cached-index cursor lookup (must agree with
+    # CursorTrack::sample) and the active-ripple windowing. Core+Gui (QImage
+    # decode + QAbstractListModel); no QtQuick — CursorPlayback formats shape
+    # URLs itself, the provider is a separate TU.
+    qt_add_executable(studio_cursor_playback_test
+        tests/CursorPlaybackTest.cpp
+        src/CursorPlayback.h src/CursorPlayback.cpp
+        src/project/CursorTrack.h src/project/CursorTrack.cpp
+        src/project/ClickTrack.h src/project/ClickTrack.cpp)
+    target_link_libraries(studio_cursor_playback_test PRIVATE Qt6::Core Qt6::Gui Qt6::Test)
+    target_include_directories(studio_cursor_playback_test PRIVATE src src/project)
+    add_test(NAME studio_cursor_playback_test COMMAND studio_cursor_playback_test)
 endif()
 
 install(TARGETS unisic-studio RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

@@ -136,6 +136,15 @@ void StudioProject::setTrimOutMs(qint64 v)
     emit trimChanged();
 }
 
+QVariantList StudioProject::clickDownTimesMs() const
+{
+    QVariantList out;
+    for (const ClickEvent &e : m_clicks.events())
+        if (e.state == ClickEvent::Down)
+            out.append(double(e.tMs));
+    return out;
+}
+
 QString StudioProject::computeVideoHash(const QString &path)
 {
     QFile f(path);

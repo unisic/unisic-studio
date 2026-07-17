@@ -1,5 +1,6 @@
 #include "EditorWindowManager.h"
 
+#include "PreviewController.h"
 #include "media/PosterExtractor.h"
 #include "project/StudioProject.h"
 
@@ -40,6 +41,10 @@ bool EditorWindowManager::openEditor(StudioProject *project, bool posterNeeded)
     project->setParent(this);
     auto *ctx = new QQmlContext(m_engine->rootContext(), project);
     ctx->setContextProperty(QStringLiteral("editorProject"), project);
+    // Per-window preview head: smooths time, evaluates the camera + cursor. Child
+    // of the project so it dies with the window (releases its shape registration).
+    auto *preview = new PreviewController(project, project);
+    ctx->setContextProperty(QStringLiteral("preview"), preview);
 
     QObject *obj = component.create(ctx);
     auto *win = qobject_cast<QQuickWindow *>(obj);

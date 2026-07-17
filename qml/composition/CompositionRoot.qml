@@ -18,10 +18,15 @@ Item {
     // ---- Inputs (the ONLY inputs) ------------------------------------------
     property var  styleModel: null                 // C++ StyleModel*
     property size videoSize: Qt.size(1920, 1080)   // source pixel size
-    property real timeMs: 0                         // reserved: keyframe transform (M1 unused)
+    property real timeMs: 0                         // current playback/render instant
     // Normalized camera viewport in [0,1]; default = whole frame (identity). The
-    // zoom/pan engine drives this later; the transform math below is already live.
+    // zoom/pan engine drives this (preview: PreviewController.zoomRect; export:
+    // per-frame from KeyframeEngine::evaluate).
     property rect zoomRect: Qt.rect(0, 0, 1, 1)
+    // CursorPlayback*: normalised pointer position, current shape bitmap, active
+    // click ripples. Null-safe (the overlay hides itself). Set by the consumer
+    // (preview: preview.cursor; export: the RenderPipeline).
+    property var cursorPlayback: null
 
     // The consumer parents its video (or poster) Item here and anchors.fill it.
     readonly property alias videoSlot: videoZoom
@@ -214,6 +219,16 @@ Item {
                             y: -root.zoomRect.y * videoZoom.height / Math.max(0.0001, root.zoomRect.height)
                         }
                     ]
+
+                    // Cursor + click ripples, above the (runtime-parented) video and
+                    // inside the same zoom transform. z keeps it over that video Item.
+                    CursorOverlay {
+                        anchors.fill: parent
+                        z: 50
+                        cursorData: root.cursorPlayback
+                        styleModel: root.styleModel
+                        videoSize: root.videoSize
+                    }
                 }
             }
         }

@@ -1,10 +1,16 @@
 #pragma once
 #include <QElapsedTimer>
+#include <QList>
 #include <QObject>
 #include <QSize>
 #include <QString>
 
+#include "project/ClickTrack.h"
+#include "project/CursorTrack.h"
+#include "project/ZoomTimeline.h"
+
 class QOpenGLContext;
+class CursorPlayback;
 class QOffscreenSurface;
 class QOpenGLFramebufferObject;
 class QQuickRenderControl;
@@ -69,6 +75,11 @@ public:
         int crf = 22;          // quality (lower = better)
         bool preferHardware = false;
         QString outputPath;
+        // --- camera + cursor overlay (M3) ---
+        QList<ZoomTimeline::Keyframe> keyframes; // camera timeline snapshot
+        CursorTrack cursor;    // overlay source (copies — decoupled, thread-safe)
+        ClickTrack clicks;
+        QString projectId;     // keys the image://cursorshape bitmaps
     };
 
     explicit RenderPipeline(QObject *parent = nullptr);
@@ -117,6 +128,8 @@ private:
     QQmlComponent *m_component = nullptr;
     QQuickItem *m_root = nullptr;       // CompositionRoot instance (owns m_videoItem)
     VideoFrameItem *m_videoItem = nullptr;
+    CursorPlayback *m_cursorPlayback = nullptr; // child of this; drives the overlay
+    bool m_shapesRegistered = false;    // release CursorShapeProvider on teardown
     QOpenGLFramebufferObject *m_fbo = nullptr;
 
     FrameDecoder *m_decoder = nullptr;  // child of this

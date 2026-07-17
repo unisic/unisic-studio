@@ -3,6 +3,7 @@
 #include <QJsonObject>
 #include <QList>
 #include <QRectF>
+#include <QVariantMap>
 
 // The ordered list of zoom/pan keyframes that drive the camera over the video.
 // A keyframe pins a normalized [0,1] viewport rect at a video-ms instant; the
@@ -64,6 +65,11 @@ public:
     // Drop every auto-generated keyframe that the user hasn't locked, ahead of
     // regenerating the automatic camera. Manual and locked keyframes survive.
     Q_INVOKABLE void clearAuto();
+
+    // Row snapshot for QML (the inspector's keyframe section binds to this):
+    // {tMs, x, y, w, h, easeInMs, easeOutMs, source, locked}. Empty map when
+    // index is out of range.
+    Q_INVOKABLE QVariantMap keyframeAt(int index) const;
 
     const QList<Keyframe> &keyframes() const { return m_keyframes; }
     void clear();

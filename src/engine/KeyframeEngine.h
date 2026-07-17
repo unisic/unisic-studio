@@ -2,6 +2,7 @@
 #include "ZoomTimeline.h"
 
 #include <QJsonObject>
+#include <QPointF>
 #include <QRectF>
 #include <QSize>
 #include <QString>
@@ -94,4 +95,18 @@ public:
 
     // Parse an "W:H" aspect string to a ratio; <=0 or malformed -> fallback.
     static double aspectRatio(const QString &aspect, double fallback);
+
+    // The visible sub-rect (normalised [0,1], carrying the OUTPUT aspect) for a
+    // camera centred at `center` (normalised frame coords) zoomed by linear
+    // factor `zoom` (>=1). Same letterbox-fit + edge-clamp geometry generate()
+    // uses internally, exposed so Manual keyframes placed by the UI frame
+    // identically to Auto ones. `aspect` is the OUTPUT aspect ("16:9", …);
+    // "source"/malformed falls back to the source aspect from videoSize.
+    static QRectF cameraRect(QSize videoSize, const QString &aspect, QPointF center,
+                             double zoom);
+
+    // The linear zoom factor implied by a camera rect (inverse of cameraRect's
+    // sizing) for the given output aspect — 1.0 == full frame. Used by the
+    // inspector to seed its zoom slider from the selected keyframe.
+    static double zoomOfRect(QSize videoSize, const QString &aspect, const QRectF &rect);
 };

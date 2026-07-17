@@ -14,6 +14,29 @@ Rectangle {
     property var styleModel: null
     readonly property var sm: styleModel
 
+    // Selected zoom keyframe (from the timeline / canvas); -1 == none. The
+    // keyframe section binds to it; deselect() asks the window to clear it.
+    property int selectedKeyframe: -1
+    signal deselect()
+
+    // Bump on any zoom-model mutation so the keyframe accessors re-read.
+    property int _rev: 0
+    Connections {
+        target: (typeof editorProject !== "undefined" && editorProject) ? editorProject.zoom : null
+        ignoreUnknownSignals: true
+        function onChanged() { panel._rev = panel._rev + 1 }
+    }
+    readonly property var kf: (selectedKeyframe >= 0 && _rev >= 0
+                               && typeof editorProject !== "undefined" && editorProject)
+                              ? editorProject.zoom.keyframeAt(selectedKeyframe) : null
+    readonly property bool hasKf: kf !== null && kf !== undefined && kf.tMs !== undefined
+    readonly property real kfZoom: hasKf ? Studio.zoomFactorOf(editorProject, selectedKeyframe) : 1
+    readonly property var _easePresets: [300, 650, 900, 1200]
+
+    // Click on empty inspector space clears the keyframe selection (kit controls
+    // grab their own taps, so this only fires on the background).
+    TapHandler { onTapped: panel.deselect() }
+
     // Index maps between the model's string enums and the combo rows.
     readonly property var _bgTypes: ["color", "gradient", "wallpaper"]
     readonly property var _frames: ["none", "minimal", "titlebar"]
@@ -113,6 +136,156 @@ Rectangle {
                 color: Theme.textPrimary
                 font.pixelSize: Theme.fontL
                 font.weight: Font.Bold
+            }
+
+            // ---- Selected zoom keyframe --------------------------------------
+            UCard {
+                width: parent.width
+                visible: panel.hasKf
+                Column {
+                    width: parent.width
+                    spacing: Theme.spacingM
+
+                    Row {
+                        width: parent.width
+                        Text {
+                            text: qsTr("Zoom keyframe")
+                            color: Theme.textPrimary
+                            font.pixelSize: Theme.fontM
+                            font.weight: Font.DemiBold
+                            width: parent.width - closeBtn.width
+                            elide: Text.ElideRight
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                        UIconButton {
+                            id: closeBtn
+                            iconName: "window-close"
+                            iconSize: 13; width: 26; height: 26
+                            tooltip: qsTr("Deselect")
+                            onClicked: panel.deselect()
+                        }
+                    }
+
+                    LabeledSlider {
+                        label: qsTr("Zoom")
+                        from: 1.0; to: 3.0; stepSize: 0.05; decimals: 2; suffix: "×"
+                        value: panel.kfZoom
+                        onMoved: (v) => {
+                            if (panel.hasKf)
+                                Studio.setZoomFactor(editorProject, panel.selectedKeyframe, v)
+                        }
+                    }
+
+                    // Position nudge pad (moves the camera centre by 2%).
+                    Column {
+                        width: parent.width
+                        spacing: 4
+                        Text {
+                            text: qsTr("Position")
+                            color: Theme.textSecondary
+                            font.pixelSize: Theme.fontS
+                        }
+                        Grid {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            columns: 3
+                            spacing: 2
+                            Item { width: 30; height: 30 }
+                            UIconButton {
+                                iconName: "arrow-up"; iconSize: 14; width: 30; height: 30
+                                onClicked: if (panel.hasKf) Studio.nudgeZoom(editorProject, panel.selectedKeyframe, 0, -0.02)
+                            }
+                            Item { width: 30; height: 30 }
+                            UIconButton {
+                                iconName: "arrow-left"; iconSize: 14; width: 30; height: 30
+                                onClicked: if (panel.hasKf) Studio.nudgeZoom(editorProject, panel.selectedKeyframe, -0.02, 0)
+                            }
+                            Item { width: 30; height: 30 }
+                            UIconButton {
+                                iconName: "arrow-right"; iconSize: 14; width: 30; height: 30
+                                onClicked: if (panel.hasKf) Studio.nudgeZoom(editorProject, panel.selectedKeyframe, 0.02, 0)
+                            }
+                            Item { width: 30; height: 30 }
+                            UIconButton {
+                                iconName: "arrow-down"; iconSize: 14; width: 30; height: 30
+                                onClicked: if (panel.hasKf) Studio.nudgeZoom(editorProject, panel.selectedKeyframe, 0, 0.02)
+                            }
+                            Item { width: 30; height: 30 }
+                        }
+                    }
+
+                    // Easing presets (ms).
+                    Row {
+                        width: parent.width
+                        spacing: Theme.spacingM
+                        Column {
+                            width: (parent.width - parent.spacing) / 2
+                            spacing: 4
+                            Text { text: qsTr("Ease in"); color: Theme.textSecondary; font.pixelSize: Theme.fontS }
+                            UValueCombo {
+                                width: parent.width
+                                values: panel._easePresets
+                                from: 0; to: 4000; suffix: " ms"
+                                value: panel.hasKf ? panel.kf.easeInMs : 650
+                                onChanged: (v) => {
+                                    if (panel.hasKf)
+                                        editorProject.zoom.setKeyframeEasing(panel.selectedKeyframe, v, panel.kf.easeOutMs)
+                                }
+                            }
+                        }
+                        Column {
+                            width: (parent.width - parent.spacing) / 2
+                            spacing: 4
+                            Text { text: qsTr("Ease out"); color: Theme.textSecondary; font.pixelSize: Theme.fontS }
+                            UValueCombo {
+                                width: parent.width
+                                values: panel._easePresets
+                                from: 0; to: 4000; suffix: " ms"
+                                value: panel.hasKf ? panel.kf.easeOutMs : 900
+                                onChanged: (v) => {
+                                    if (panel.hasKf)
+                                        editorProject.zoom.setKeyframeEasing(panel.selectedKeyframe, panel.kf.easeInMs, v)
+                                }
+                            }
+                        }
+                    }
+
+                    // Lock + delete.
+                    Row {
+                        width: parent.width
+                        spacing: Theme.spacingM
+                        Text {
+                            text: qsTr("Locked")
+                            color: Theme.textSecondary
+                            font.pixelSize: Theme.fontS
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: parent.width - lockSwitch.width - delBtn.width - 2 * parent.spacing
+                            elide: Text.ElideRight
+                        }
+                        USwitch {
+                            id: lockSwitch
+                            anchors.verticalCenter: parent.verticalCenter
+                            checked: panel.hasKf ? panel.kf.locked : false
+                            onToggled: (c) => {
+                                if (panel.hasKf)
+                                    editorProject.zoom.setKeyframeLocked(panel.selectedKeyframe, c)
+                            }
+                        }
+                        UButton {
+                            id: delBtn
+                            variant: "danger"
+                            compact: true
+                            text: qsTr("Delete")
+                            anchors.verticalCenter: parent.verticalCenter
+                            onClicked: {
+                                if (panel.hasKf) {
+                                    var i = panel.selectedKeyframe
+                                    panel.deselect()
+                                    editorProject.zoom.removeAt(i)
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             // ---- Background ----

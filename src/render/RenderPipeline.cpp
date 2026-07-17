@@ -1,7 +1,10 @@
 #include "RenderPipeline.h"
 
+#include "CursorPlayback.h"
+#include "CursorShapeProvider.h"
 #include "FrameDecoder.h"
 #include "VideoFrameItem.h"
+#include "engine/KeyframeEngine.h"
 #include "media/FfmpegUtil.h"
 #include "project/StyleModel.h"
 
@@ -151,6 +154,9 @@ bool RenderPipeline::buildScene(QString *error)
     m_window->setGeometry(0, 0, m_s.outW, m_s.outH);
 
     m_engine = new QQmlEngine(this);
+    // The overlay resolves recorded cursor bitmaps through image://cursorshape;
+    // the export engine needs its own provider instance (shared static registry).
+    m_engine->addImageProvider(QStringLiteral("cursorshape"), new CursorShapeProvider());
     m_component = new QQmlComponent(
         m_engine,
         QUrl(QStringLiteral("qrc:/qt/qml/UnisicStudio/qml/composition/CompositionRoot.qml")));
@@ -171,7 +177,18 @@ bool RenderPipeline::buildScene(QString *error)
     m_root->setProperty("styleModel", QVariant::fromValue(static_cast<QObject *>(m_s.style)));
     m_root->setProperty("videoSize", QVariant::fromValue(QSizeF(m_s.videoSize)));
     m_root->setProperty("timeMs", double(m_s.trimInMs));
-    // zoomRect stays at its (0,0,1,1) full-frame default for M1.
+
+    // Cursor overlay: the recording was captured in Metadata mode, so without
+    // this the pointer is invisible. Same object type as the live preview drives.
+    m_cursorPlayback = new CursorPlayback(m_s.projectId, this);
+    m_cursorPlayback->setTracks(m_s.cursor, m_s.clicks, m_s.videoSize);
+    CursorShapeProvider::registerShapes(m_s.projectId, m_s.cursor.shapes());
+    m_shapesRegistered = true;
+    m_root->setProperty("cursorPlayback",
+                        QVariant::fromValue(static_cast<QObject *>(m_cursorPlayback)));
+    // Camera at the first exported instant (subsequent frames set it in onFrame).
+    m_root->setProperty("zoomRect", KeyframeEngine::evaluate(m_s.keyframes, m_s.trimInMs));
+    m_cursorPlayback->setTime(m_s.trimInMs);
 
     auto *slot = qobject_cast<QQuickItem *>(m_root->property("videoSlot").value<QObject *>());
     if (!slot) {
@@ -274,7 +291,12 @@ void RenderPipeline::onFrame(int index, const QImage &frame)
 
     m_gl->makeCurrent(m_surface);
     m_videoItem->setFrame(frame);
-    m_root->setProperty("timeMs", double(m_s.trimInMs) + double(index) * 1000.0 / m_s.fps);
+    const qint64 tMs = m_s.trimInMs + qint64(qRound(double(index) * 1000.0 / m_s.fps));
+    m_root->setProperty("timeMs", double(tMs));
+    // Camera + cursor for THIS frame — one evaluate path shared with the preview.
+    m_root->setProperty("zoomRect", KeyframeEngine::evaluate(m_s.keyframes, tMs));
+    if (m_cursorPlayback)
+        m_cursorPlayback->setTime(tMs);
 
     m_rc->polishItems();
     m_rc->beginFrame();
@@ -397,6 +419,13 @@ void RenderPipeline::teardownScene()
     delete m_root; // composition subtree, incl. the VideoFrameItem child
     m_root = nullptr;
     m_videoItem = nullptr; // was a child of the subtree above
+    // Overlay driver (child of this, not the scene subtree) + its shape holds.
+    delete m_cursorPlayback;
+    m_cursorPlayback = nullptr;
+    if (m_shapesRegistered) {
+        CursorShapeProvider::releaseProject(m_s.projectId);
+        m_shapesRegistered = false;
+    }
     delete m_rc;
     m_rc = nullptr;
     delete m_component;

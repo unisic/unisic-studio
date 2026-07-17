@@ -524,3 +524,29 @@ QVector<Keyframe> KeyframeEngine::generate(const CursorTrack &cursor,
 
     return out;
 }
+
+// ---------------------------------------------------------------------------
+// Manual-keyframe geometry: one source of truth with the generator's camera so
+// user-placed zooms frame exactly like the auto ones.
+// ---------------------------------------------------------------------------
+QRectF KeyframeEngine::cameraRect(QSize videoSize, const QString &aspect, QPointF center,
+                                  double zoom)
+{
+    const double W = videoSize.width() > 0 ? videoSize.width() : 1.0;
+    const double H = videoSize.height() > 0 ? videoSize.height() : 1.0;
+    Geometry g;
+    g.init(W, H, aspectRatio(aspect, W / H));
+    return g.rectAt(center, std::max(1.0, zoom));
+}
+
+double KeyframeEngine::zoomOfRect(QSize videoSize, const QString &aspect, const QRectF &rect)
+{
+    if (rect.width() <= 0.0)
+        return 1.0;
+    const double W = videoSize.width() > 0 ? videoSize.width() : 1.0;
+    const double H = videoSize.height() > 0 ? videoSize.height() : 1.0;
+    Geometry g;
+    g.init(W, H, aspectRatio(aspect, W / H));
+    // rectAt sizes width as bw0 / z, so z == bw0 / width.
+    return std::max(1.0, g.bw0 / rect.width());
+}

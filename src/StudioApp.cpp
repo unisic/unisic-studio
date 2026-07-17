@@ -5,6 +5,7 @@
 #include "RecentProjects.h"
 #include "capture/InputPermission.h"
 #include "capture/StudioRecorder.h"
+#include "engine/KeyframeEngine.h"
 #include "media/VideoProbe.h"
 #include "project/StudioProject.h"
 
@@ -12,12 +13,17 @@
 #include <QCoreApplication>
 #include <QDesktopServices>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QLibraryInfo>
+#include <QPointF>
+#include <QRectF>
 #include <QStandardPaths>
 #include <QUrl>
+
+#include <algorithm>
 
 StudioApp::StudioApp(QObject *parent)
     : QObject(parent)
@@ -158,6 +164,9 @@ bool StudioApp::openProject(const QString &pathOrUrl)
     // Remember where it came from so subsequent saves are silent.
     p->setProperty("_sourcePath", abs);
     m_recent->recordOpened(abs, QFileInfo(abs).completeBaseName(), p->durationMs());
+    // Seed the auto-camera for a recording that carries a cursor track but no
+    // zoom yet (a just-recorded project, or an older file predating the engine).
+    generateZoom(p, /*onlyIfEmpty=*/true);
     if (!m_editors->openEditor(p, !capVideoPlayback())) {
         emit notified(tr("Could not open the editor window."), true);
         return false;
@@ -411,4 +420,125 @@ void StudioApp::refreshInputPermission()
 QString StudioApp::inputPermissionFixHint() const
 {
     return InputPermission::fixHint();
+}
+
+// --- auto-zoom (M3) ----------------------------------------------------------
+
+void StudioApp::generateZoom(StudioProject *project, bool onlyIfEmpty)
+{
+    if (!project)
+        return;
+    ZoomTimeline *zoom = project->zoom();
+    if (project->cursorTrack().isEmpty())
+        return;                                   // nothing to derive a camera from
+    if (onlyIfEmpty && !zoom->keyframes().isEmpty())
+        return;                                   // already has a timeline
+
+    const KeyframeEngine::Params params = KeyframeEngine::Params::fromJson(zoom->autoParams());
+
+    // Pinned = the survivors clearAuto() keeps (Manual or locked) so the engine
+    // routes its auto spans around the user's own work.
+    QVector<KeyframeEngine::Keyframe> pinned;
+    for (const auto &kf : zoom->keyframes())
+        if (kf.source == ZoomTimeline::Manual || kf.locked)
+            pinned.append(kf);
+
+    const QString aspect =
+        project->style() ? project->style()->aspect() : QStringLiteral("source");
+
+    QElapsedTimer timer;
+    timer.start();
+    const QVector<KeyframeEngine::Keyframe> kfs =
+        KeyframeEngine::generate(project->cursorTrack(), project->clickTrack(),
+                                 project->videoSize(), project->durationMs(), aspect, params,
+                                 pinned);
+    const double genMs = timer.nsecsElapsed() / 1.0e6;
+
+    zoom->clearAuto();                            // drop old autos, keep Manual + locked
+    for (const auto &kf : kfs)
+        zoom->addKeyframe(kf);
+    zoom->setAutoParams(params.toJson());         // persist the params used
+
+    qInfo("autozoom: %lld keyframes from %lld cursor samples in %.2f ms",
+          static_cast<long long>(kfs.size()),
+          static_cast<long long>(project->cursorTrack().count()), genMs);
+}
+
+void StudioApp::regenerateZoom(StudioProject *project)
+{
+    generateZoom(project, /*onlyIfEmpty=*/false);
+}
+
+int StudioApp::addManualZoom(StudioProject *project, qint64 tMs, double cx, double cy, double zoom)
+{
+    if (!project)
+        return -1;
+    const QString aspect =
+        project->style() ? project->style()->aspect() : QStringLiteral("source");
+    ZoomTimeline::Keyframe kf;
+    kf.tMs = qBound<qint64>(0, tMs, qMax<qint64>(0, project->durationMs()));
+    kf.rect = KeyframeEngine::cameraRect(project->videoSize(), aspect, QPointF(cx, cy), zoom);
+    kf.easeInMs = 650;
+    kf.easeOutMs = 900;
+    kf.source = ZoomTimeline::Manual;
+    return project->zoom()->addKeyframe(kf);
+}
+
+int StudioApp::addResetZoom(StudioProject *project, qint64 tMs)
+{
+    if (!project)
+        return -1;
+    ZoomTimeline::Keyframe kf;
+    kf.tMs = qBound<qint64>(0, tMs, qMax<qint64>(0, project->durationMs()));
+    kf.rect = QRectF(0, 0, 1, 1);
+    kf.easeInMs = 650;
+    kf.easeOutMs = 900;
+    kf.source = ZoomTimeline::Manual;
+    return project->zoom()->addKeyframe(kf);
+}
+
+void StudioApp::setZoomFactor(StudioProject *project, int index, double zoom)
+{
+    if (!project)
+        return;
+    const QVariantMap m = project->zoom()->keyframeAt(index);
+    if (m.isEmpty())
+        return;
+    const QRectF cur(m.value(QStringLiteral("x")).toDouble(), m.value(QStringLiteral("y")).toDouble(),
+                     m.value(QStringLiteral("w")).toDouble(), m.value(QStringLiteral("h")).toDouble());
+    const QString aspect =
+        project->style() ? project->style()->aspect() : QStringLiteral("source");
+    const QRectF rect =
+        KeyframeEngine::cameraRect(project->videoSize(), aspect, cur.center(), zoom);
+    project->zoom()->setKeyframeRect(index, rect);
+}
+
+void StudioApp::nudgeZoom(StudioProject *project, int index, double dxFrac, double dyFrac)
+{
+    if (!project)
+        return;
+    const QVariantMap m = project->zoom()->keyframeAt(index);
+    if (m.isEmpty())
+        return;
+    const double w = m.value(QStringLiteral("w")).toDouble();
+    const double h = m.value(QStringLiteral("h")).toDouble();
+    double x = m.value(QStringLiteral("x")).toDouble() + dxFrac;
+    double y = m.value(QStringLiteral("y")).toDouble() + dyFrac;
+    x = std::clamp(x, 0.0, std::max(0.0, 1.0 - w));
+    y = std::clamp(y, 0.0, std::max(0.0, 1.0 - h));
+    project->zoom()->setKeyframeRect(index, QRectF(x, y, w, h));
+}
+
+double StudioApp::zoomFactorOf(StudioProject *project, int index)
+{
+    if (!project)
+        return 1.0;
+    const QVariantMap m = project->zoom()->keyframeAt(index);
+    if (m.isEmpty())
+        return 1.0;
+    const QRectF cur(m.value(QStringLiteral("x")).toDouble(), m.value(QStringLiteral("y")).toDouble(),
+                     m.value(QStringLiteral("w")).toDouble(), m.value(QStringLiteral("h")).toDouble());
+    const QString aspect =
+        project->style() ? project->style()->aspect() : QStringLiteral("source");
+    return KeyframeEngine::zoomOfRect(project->videoSize(), aspect, cur);
 }

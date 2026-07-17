@@ -181,6 +181,12 @@ void ExportController::start(StudioProject *project)
     s.crf = crf;
     s.preferHardware = false; // M1: software x264/vp9 by default (robust, tested)
     s.outputPath = m_outputPath;
+    // Camera + cursor overlay: snapshot the live models so the offscreen render
+    // is decoupled from any concurrent editing (copies are cheap/COW).
+    s.keyframes = project->zoom()->keyframes();
+    s.cursor = project->cursorTrack();
+    s.clicks = project->clickTrack();
+    s.projectId = QString::number(quintptr(project), 16);
 
     m_progress = 0.0;
     m_framesDone = 0;
