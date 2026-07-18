@@ -139,11 +139,25 @@ void ZoomTimeline::removeAt(int index)
     emit changed();
 }
 
+// A hand edit on an unlocked Auto keyframe locks it in place — otherwise the
+// next implicit regeneration (intensity slider, aspect switch, …) silently
+// discards the user's work. Locked Auto keyframes survive replaceAutoKeyframes/
+// clearAuto and the generator routes its spans around them (pinned windows).
+void ZoomTimeline::pinOnUserEdit(int index)
+{
+    Keyframe &kf = m_keyframes[index];
+    if (kf.source != Auto || kf.locked)
+        return;
+    kf.locked = true;
+    emit dataChanged(this->index(index), this->index(index), {LockedRole});
+}
+
 int ZoomTimeline::moveKeyframe(int index, qint64 newT)
 {
     if (index < 0 || index >= m_keyframes.size())
         return -1;
 
+    pinOnUserEdit(index);
     Keyframe kf = m_keyframes.at(index);
     kf.tMs = newT;
 
@@ -167,6 +181,7 @@ void ZoomTimeline::setKeyframeRect(int index, const QRectF &rect)
 {
     if (index < 0 || index >= m_keyframes.size())
         return;
+    pinOnUserEdit(index);
     m_keyframes[index].rect = rect;
     emit dataChanged(this->index(index), this->index(index), {RectRole});
     emit changed();
@@ -185,6 +200,7 @@ void ZoomTimeline::setKeyframeEasing(int index, int easeInMs, int easeOutMs)
 {
     if (index < 0 || index >= m_keyframes.size())
         return;
+    pinOnUserEdit(index);
     m_keyframes[index].easeInMs = easeInMs;
     m_keyframes[index].easeOutMs = easeOutMs;
     emit dataChanged(this->index(index), this->index(index), {EaseInRole, EaseOutRole});
