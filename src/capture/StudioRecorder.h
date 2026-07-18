@@ -70,6 +70,9 @@ signals:
     void armed();                          // stream live, encoding held for commit()
     void started();                        // encoding began
     void paused(bool paused);
+    // stop() ran (user OR recorder-initiated: max-duration timer, portal session
+    // closed) — the facade must show Finalizing, not a still-ticking Recording.
+    void finalizing();
     void elapsedChanged();                 // ~1 Hz while recording
     void failed(const QString &error);     // "cancelled" is filtered by the UI
     void finished(const QString &projectPath);   // path to the .unisicstudio sidecar
@@ -86,6 +89,9 @@ private:
     void onEncoderFinished(int code, bool crashed);
     void finalize();                       // build tracks + project, save sidecar
     void maybeExcise(std::function<void()> then);
+    // Move the raw capture out of the crash-sweep's reach after a finalize
+    // failure; clears m_rawMasterPath and returns the surviving path.
+    QString rescueRawMaster();
     void stopGrabber();
     void teardownProcesses();
     void cleanup();
@@ -141,6 +147,10 @@ private:
     bool m_hasAudio = false;
     QByteArray m_lastFrame;
     quint64 m_lastSampledSeq = 0;
+    // Countdown pre-roll guard (see beginEncoding/sampleFrame): the newest frame
+    // seq at commit; sampleFrame skips it until fresh damage arrives.
+    quint64 m_preRollSeq = 0;
+    bool m_awaitFreshFrame = false;
 
     // Time base.
     qint64 m_t0MonoNs = 0;
