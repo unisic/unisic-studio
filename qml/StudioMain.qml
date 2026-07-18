@@ -12,13 +12,19 @@ import UnisicStudio
 // qsTr(); every color comes from a Theme token; every control is a kit component.
 Window {
     id: window
-    width: 1280
-    height: 800
+    // Restore the last windowed size (the settings exist for exactly this; a
+    // user resize overwrites the binding, which is the intended one-shot use).
+    width: Studio.settings.windowWidth
+    height: Studio.settings.windowHeight
     minimumWidth: 1000
     minimumHeight: 640
     visible: true
     title: qsTr("Unisic Studio")
     color: Theme.backgroundDeep
+
+    // Persist plain windowed resizes only — never a maximized/fullscreen size.
+    onWidthChanged: if (visibility === Window.Windowed) Studio.settings.windowWidth = width
+    onHeightChanged: if (visibility === Window.Windowed) Studio.settings.windowHeight = height
 
     property int currentPage: 0
 

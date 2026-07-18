@@ -257,7 +257,11 @@ Rectangle {
                 cursorShape: Qt.SizeHorCursor
                 onPositionChanged: (m) => {
                     if (!pressed || !timeline.project) return
-                    var v = Math.round(timeline.msForX(trimIn.x + width / 2 + m.x))
+                    // Map through the item tree: m.x is MouseArea-relative and the
+                    // -4 margins shift its origin, so hand-adding offsets lands the
+                    // handle several px right of the pointer.
+                    var px = mapToItem(trimIn.parent, m.x, 0).x
+                    var v = Math.round(timeline.msForX(px))
                     timeline.project.trimInMs = Math.min(v, timeline.effOutMs - 100)
                 }
             }
@@ -282,7 +286,8 @@ Rectangle {
                 cursorShape: Qt.SizeHorCursor
                 onPositionChanged: (m) => {
                     if (!pressed || !timeline.project) return
-                    var v = Math.round(timeline.msForX(trimOut.x + width / 2 + m.x))
+                    var px = mapToItem(trimOut.parent, m.x, 0).x
+                    var v = Math.round(timeline.msForX(px))
                     timeline.project.trimOutMs = Math.max(v, (timeline.project.trimInMs || 0) + 100)
                 }
             }
@@ -314,7 +319,9 @@ Rectangle {
                 anchors.fill: parent; anchors.margins: -5
                 cursorShape: Qt.SizeHorCursor
                 onPositionChanged: (m) => {
-                    if (pressed) timeline.seek(Math.round(timeline.msForX(playhead.x + 1 + m.x)))
+                    if (pressed)
+                        timeline.seek(Math.round(timeline.msForX(
+                            mapToItem(playhead.parent, m.x, 0).x)))
                 }
             }
         }
