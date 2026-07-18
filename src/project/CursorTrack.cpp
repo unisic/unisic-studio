@@ -174,7 +174,9 @@ CursorTrack CursorTrack::fromJson(const QJsonObject &o)
     qint64 accT = 0;
     qint64 accX = 0, accY = 0;
     for (int i = 0; i < n; ++i) {
-        accT += qint64(dt.at(i).toDouble());
+        // Clamp: a negative delta in a corrupt/hand-edited file would make tMs
+        // non-monotonic and break sample()'s binary search invariant.
+        accT += qMax<qint64>(0, qint64(dt.at(i).toDouble()));
         accX += qint64(xs.at(i).toDouble());
         accY += qint64(ys.at(i).toDouble());
         // First element is absolute; deltas above make the accumulator absolute

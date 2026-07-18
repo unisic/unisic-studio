@@ -124,6 +124,9 @@ public:
     // Put `text` on the system clipboard (Settings input-permission "Copy" action).
     Q_INVOKABLE void copyToClipboard(const QString &text);
 
+    // Overwrite-confirmation support for the export dialog.
+    Q_INVOKABLE bool fileExists(const QString &path) const;
+
     // --- recording (M2) ---
     // Begin a recording: constructs the recorder on first use (startup stays
     // lazy), negotiates the portal, runs the countdown, then records. finished →
@@ -152,6 +155,9 @@ public:
     Q_INVOKABLE void nudgeZoom(StudioProject *project, int index, double dxFrac, double dyFrac);
     // The linear zoom factor of keyframe `index` (seeds the inspector slider).
     Q_INVOKABLE double zoomFactorOf(StudioProject *project, int index);
+    // Aspect that keyframe rects must carry to display undistorted (output
+    // aspect in fill mode, "source" in fit mode).
+    static QString rectAspectFor(StudioProject *project);
 
     // Re-probe click-capture (libinput) availability on demand; updates
     // inputPermissionStatus. Cheap, but not free — call it when the UI needs it,

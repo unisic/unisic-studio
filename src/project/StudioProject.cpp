@@ -284,15 +284,14 @@ StudioProject *StudioProject::load(const QString &path, QString *error)
     f.close();
 
     // Reserved compressed-container sniff (see header). v1 writes uncompressed,
-    // so this only fires on a future/foreign compressed file.
+    // so this only fires on a future/foreign compressed file. No decode attempt:
+    // the magic is gzip and qUncompress speaks only Qt's length-prefixed zlib
+    // format, so it could never succeed anyway — report it honestly.
     if (raw.size() >= 2 && quint8(raw.at(0)) == 0x1F && quint8(raw.at(1)) == 0x8B) {
-        const QByteArray un = qUncompress(raw);
-        if (un.isEmpty()) {
-            if (error)
-                *error = tr("%1 looks compressed but could not be decompressed").arg(path);
-            return nullptr;
-        }
-        raw = un;
+        if (error)
+            *error = tr("%1 is a compressed project file, which this version cannot read")
+                         .arg(path);
+        return nullptr;
     }
 
     QJsonParseError perr{};

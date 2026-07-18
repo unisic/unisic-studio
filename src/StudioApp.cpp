@@ -232,8 +232,22 @@ bool StudioApp::doSave(StudioProject *project, const QString &path)
     const QDir dir = QFileInfo(abs).absoluteDir();
     // Finalize the portable relative path now that the project's home is known
     // (load() prefers relPath so project+video move together as a bundle).
-    if (!project->videoAbsPath().isEmpty())
-        project->setVideoRelPath(dir.relativeFilePath(project->videoAbsPath()));
+    // From the RESOLVED location, not videoAbsPath: after a bundle move the
+    // abs path still names the pre-move location and would poison the relPath
+    // (and the file) on the next save. Refresh absPath to match while at it.
+    const QString video = project->videoResolved().isEmpty() ? project->videoAbsPath()
+                                                             : project->videoResolved();
+    if (!video.isEmpty()) {
+        project->setVideoAbsPath(video);
+        project->setVideoRelPath(dir.relativeFilePath(video));
+    }
+    // The webcam sidecar moves with the bundle the same way.
+    const QString webcam = project->webcamResolved().isEmpty() ? project->webcamAbsPath()
+                                                               : project->webcamResolved();
+    if (!webcam.isEmpty()) {
+        project->setWebcamAbsPath(webcam);
+        project->setWebcamRelPath(dir.relativeFilePath(webcam));
+    }
 
     QString err;
     if (!project->save(abs, &err)) {
@@ -326,6 +340,11 @@ QString StudioApp::pickProjectsDirectory(const QString &startDir)
     return QFileDialog::getExistingDirectory(nullptr, tr("Choose projects folder"), start);
 }
 
+bool StudioApp::fileExists(const QString &path) const
+{
+    return !path.isEmpty() && QFileInfo::exists(path);
+}
+
 void StudioApp::copyToClipboard(const QString &text)
 {
     if (QClipboard *cb = QGuiApplication::clipboard())
@@ -366,6 +385,8 @@ void StudioApp::ensureRecorder()
             [this] { setRecorderState(RecRecording); });
     connect(m_recorder, &StudioRecorder::paused, this,
             [this](bool p) { setRecorderState(p ? RecPaused : RecRecording); });
+    connect(m_recorder, &StudioRecorder::finalizing, this,
+            [this] { setRecorderState(RecFinalizing); });
     connect(m_recorder, &StudioRecorder::elapsedChanged, this, &StudioApp::recorderElapsedChanged);
     connect(m_recorder, &StudioRecorder::failed, this, [this](const QString &e) {
         stopCountdown();
@@ -465,10 +486,38 @@ void StudioApp::generateZoom(StudioProject *project, bool onlyIfEmpty)
     if (!project)
         return;
     ZoomTimeline *zoom = project->zoom();
+
+    // Re-frame kept (Manual/locked) keyframes to the CURRENT rect aspect first:
+    // their stored rects encode the aspect at creation time, and after an
+    // aspect or fill-mode switch a stale-shaped rect renders the screen content
+    // stretched by oldAspect/newAspect (preview and export share the
+    // composition). Keeps each keyframe's center and zoom level. Runs BEFORE
+    // the cursor-track early-out: an imported clip has no cursor track but its
+    // manual zooms go just as stale on an aspect switch.
+    if (!onlyIfEmpty) {
+        const QString rectAspect = rectAspectFor(project);
+        const auto kfs = zoom->keyframes();
+        for (int i = 0; i < kfs.size(); ++i) {
+            const auto &kf = kfs.at(i);
+            if (kf.source != ZoomTimeline::Manual && !kf.locked)
+                continue;                       // regen replaces it anyway
+            const double z =
+                KeyframeEngine::zoomOfRect(project->videoSize(), rectAspect, kf.rect);
+            const QRectF fixed = KeyframeEngine::cameraRect(project->videoSize(), rectAspect,
+                                                            kf.rect.center(), z);
+            if (fixed != kf.rect)
+                zoom->setKeyframeRect(i, fixed);
+        }
+    }
+
     if (project->cursorTrack().isEmpty())
         return;                                   // nothing to derive a camera from
     if (onlyIfEmpty && !zoom->keyframes().isEmpty())
         return;                                   // already has a timeline
+    // Non-empty autoParams with an empty timeline = the engine ran before and
+    // the user deleted every keyframe on purpose — don't resurrect them on open.
+    if (onlyIfEmpty && !zoom->autoParams().isEmpty())
+        return;
 
     KeyframeEngine::Params params = KeyframeEngine::Params::fromJson(zoom->autoParams());
     // Crop-to-fill vs letterbox is a StyleModel choice; feed it to the engine so the
@@ -506,15 +555,25 @@ void StudioApp::regenerateZoom(StudioProject *project)
     generateZoom(project, /*onlyIfEmpty=*/false);
 }
 
+// The aspect that keyframe RECTS must carry to render undistorted: rects are
+// stretched to fill the composition's video region, which is output-aspect in
+// fill mode but SOURCE-aspect in fit mode (the letterboxed card keeps the
+// source shape).
+QString StudioApp::rectAspectFor(StudioProject *project)
+{
+    StyleModel *st = project ? project->style() : nullptr;
+    const bool fill = st && st->fillMode() == QLatin1String("fill");
+    return fill ? st->aspect() : QStringLiteral("source");
+}
+
 int StudioApp::addManualZoom(StudioProject *project, qint64 tMs, double cx, double cy, double zoom)
 {
     if (!project)
         return -1;
-    const QString aspect =
-        project->style() ? project->style()->aspect() : QStringLiteral("source");
     ZoomTimeline::Keyframe kf;
     kf.tMs = qBound<qint64>(0, tMs, qMax<qint64>(0, project->durationMs()));
-    kf.rect = KeyframeEngine::cameraRect(project->videoSize(), aspect, QPointF(cx, cy), zoom);
+    kf.rect = KeyframeEngine::cameraRect(project->videoSize(), rectAspectFor(project),
+                                         QPointF(cx, cy), zoom);
     kf.easeInMs = 650;
     kf.easeOutMs = 900;
     kf.source = ZoomTimeline::Manual;
@@ -531,9 +590,8 @@ int StudioApp::addResetZoom(StudioProject *project, qint64 tMs)
     // frame), not the letterboxed whole frame — matching the auto base camera.
     const bool fill = project->style() && project->style()->fillMode() == QLatin1String("fill");
     if (fill) {
-        const QString aspect =
-            project->style() ? project->style()->aspect() : QStringLiteral("source");
-        kf.rect = KeyframeEngine::cameraRect(project->videoSize(), aspect, QPointF(0.5, 0.5), 1.0);
+        kf.rect = KeyframeEngine::cameraRect(project->videoSize(), rectAspectFor(project),
+                                             QPointF(0.5, 0.5), 1.0);
     } else {
         kf.rect = QRectF(0, 0, 1, 1);
     }
@@ -552,10 +610,8 @@ void StudioApp::setZoomFactor(StudioProject *project, int index, double zoom)
         return;
     const QRectF cur(m.value(QStringLiteral("x")).toDouble(), m.value(QStringLiteral("y")).toDouble(),
                      m.value(QStringLiteral("w")).toDouble(), m.value(QStringLiteral("h")).toDouble());
-    const QString aspect =
-        project->style() ? project->style()->aspect() : QStringLiteral("source");
-    const QRectF rect =
-        KeyframeEngine::cameraRect(project->videoSize(), aspect, cur.center(), zoom);
+    const QRectF rect = KeyframeEngine::cameraRect(project->videoSize(),
+                                                   rectAspectFor(project), cur.center(), zoom);
     project->zoom()->setKeyframeRect(index, rect);
 }
 
@@ -584,9 +640,7 @@ double StudioApp::zoomFactorOf(StudioProject *project, int index)
         return 1.0;
     const QRectF cur(m.value(QStringLiteral("x")).toDouble(), m.value(QStringLiteral("y")).toDouble(),
                      m.value(QStringLiteral("w")).toDouble(), m.value(QStringLiteral("h")).toDouble());
-    const QString aspect =
-        project->style() ? project->style()->aspect() : QStringLiteral("source");
-    return KeyframeEngine::zoomOfRect(project->videoSize(), aspect, cur);
+    return KeyframeEngine::zoomOfRect(project->videoSize(), rectAspectFor(project), cur);
 }
 
 // --- developer aids (dev builds only) ----------------------------------------
