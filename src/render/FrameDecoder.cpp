@@ -1,5 +1,6 @@
 #include "FrameDecoder.h"
 
+#include <QElapsedTimer>
 #include <QFileInfo>
 #include <QProcess>
 #include <QStandardPaths>
@@ -139,9 +140,24 @@ void FrameDecoder::run()
             } else if (n == 0) {
                 if (proc->state() == QProcess::NotRunning && proc->bytesAvailable() == 0)
                     break; // EOF
-                if (!proc->waitForReadyRead(15000)) {
-                    if (proc->state() == QProcess::NotRunning)
+                // Wait in short slices, re-checking the cancel flag each time:
+                // the GUI-thread destructor JOINS this thread, so one blind
+                // 15 s waitForReadyRead would freeze the UI for the whole stall
+                // window on cancel/quit-mid-export.
+                bool gotData = false;
+                QElapsedTimer stallClock;
+                stallClock.start();
+                while (!gotData && stallClock.elapsed() < 15000) {
+                    if (m_cancel.loadAcquire()) { aborted = true; break; }
+                    gotData = proc->waitForReadyRead(200);
+                    if (!gotData && proc->state() == QProcess::NotRunning)
                         break; // finished between checks
+                }
+                if (aborted)
+                    break;
+                if (!gotData) {
+                    if (proc->state() == QProcess::NotRunning)
+                        break;
                     failed = true;
                     break; // stalled
                 }

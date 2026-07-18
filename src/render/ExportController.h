@@ -28,6 +28,8 @@ class ExportController : public QObject
     Q_PROPERTY(QString outputPath READ outputPath WRITE setOutputPath NOTIFY outputPathChanged)
 
     Q_PROPERTY(double progress READ progress NOTIFY progressChanged) // 0..1
+    // GIF only: frames done, palette passes running (bar full, "finishing…").
+    Q_PROPERTY(bool finalizing READ finalizing NOTIFY progressChanged)
     Q_PROPERTY(int framesDone READ framesDone NOTIFY progressChanged)
     Q_PROPERTY(int totalFrames READ totalFrames NOTIFY progressChanged)
     Q_PROPERTY(qint64 etaMs READ etaMs NOTIFY progressChanged)
@@ -51,6 +53,7 @@ public:
     int quality() const { return m_quality; }
     QString outputPath() const { return m_outputPath; }
     double progress() const { return m_progress; }
+    bool finalizing() const { return m_finalizing; }
     int framesDone() const { return m_framesDone; }
     int totalFrames() const { return m_totalFrames; }
     qint64 etaMs() const { return m_etaMs; }
@@ -108,6 +111,7 @@ private:
     QString m_outputPath;
 
     double m_progress = 0.0;
+    bool m_finalizing = false;
     int m_framesDone = 0;
     int m_totalFrames = 0;
     qint64 m_etaMs = 0;
