@@ -89,6 +89,18 @@ bool EditorWindowManager::openEditor(StudioProject *project, bool posterNeeded)
     return true;
 }
 
+bool EditorWindowManager::hasOpen(const QString &projectFilePath) const
+{
+    if (projectFilePath.isEmpty())
+        return false;
+    const QString abs = QFileInfo(projectFilePath).absoluteFilePath();
+    for (const Open &o : m_windows) {
+        if (o.project && o.project->property("_sourcePath").toString() == abs)
+            return true;
+    }
+    return false;
+}
+
 void EditorWindowManager::closeWindow(QQuickWindow *win)
 {
     for (int i = 0; i < m_windows.size(); ++i) {

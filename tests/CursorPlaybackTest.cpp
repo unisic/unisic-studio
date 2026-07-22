@@ -53,14 +53,73 @@ static CursorTrack moveThenHold()
     return track;
 }
 
+// A violent flick: 1700 px in 240 ms (~3.7 screens/s), far faster than the
+// spring's catch-up speed — exercises the rendered-lag cap.
+static CursorTrack fastFlick()
+{
+    CursorTrack track;
+    for (qint64 t = 0; t <= 1000; t += 20)
+        track.append({t, 100, 500, true, 0});
+    for (qint64 t = 1020; t <= 1240; t += 20) {
+        const double f = double(t - 1000) / 240.0;
+        track.append({t, 100 + 1700 * f, 500 + 60 * f, true, 0});
+    }
+    for (qint64 t = 1260; t <= 3500; t += 20)
+        track.append({t, 1800, 560, true, 0});
+    return track;
+}
+
+// Move, idle long enough for the fade-out to BEGIN but not finish, then move
+// again — the wake fade must resume from the partial level, not snap to 1.
+static CursorTrack moveIdleMove()
+{
+    CursorTrack track;
+    for (qint64 t = 0; t <= 1000; t += 20)
+        track.append({t, 200, 250, true, 0});
+    for (qint64 t = 1020; t < 2000; t += 20) {
+        const double f = double(t - 1000) / 1000.0;
+        track.append({t, 200 + 1200 * f, 250 + 300 * f, true, 0});
+    }
+    for (qint64 t = 2000; t < 4600; t += 20)
+        track.append({t, 1400, 550, true, 0});
+    for (qint64 t = 4600; t < 5400; t += 20) {
+        const double f = double(t - 4600) / 800.0;
+        track.append({t, 1400 - 800 * f, 550 - 250 * f, true, 0});
+    }
+    for (qint64 t = 5400; t <= 7200; t += 20)
+        track.append({t, 600, 300, true, 0});
+    return track;
+}
+
+// Linear interpolation over the smoothed samples, normalised — the spring's
+// actual chase target at an arbitrary time.
+static QPointF smoothedTargetAt(const CursorTrack &smoothed, qint64 tMs, const QSize &video)
+{
+    const QList<CursorSample> &s = smoothed.samples();
+    int i = 0;
+    while (i + 1 < s.size() && s.at(i + 1).tMs <= tMs)
+        ++i;
+    double x = s.at(i).x;
+    double y = s.at(i).y;
+    if (i + 1 < s.size() && tMs > s.at(i).tMs) {
+        const double span = double(s.at(i + 1).tMs - s.at(i).tMs);
+        const double f = span > 0 ? std::min(1.0, double(tMs - s.at(i).tMs) / span) : 0.0;
+        x += (s.at(i + 1).x - x) * f;
+        y += (s.at(i + 1).y - y) * f;
+    }
+    return QPointF(x / video.width(), y / video.height());
+}
+
 class CursorPlaybackTest : public QObject
 {
     Q_OBJECT
 
 private slots:
     void springFollowLagsOvershootsAndSettles();
+    void fastFlickLagBoundedAndSettles();
     void deterministicAcrossSeeksAndCadence();
     void idleHideAndWake();
+    void wakeMidFadeIsContinuous();
     void ripplesWindow();
 };
 
@@ -98,6 +157,62 @@ void CursorPlaybackTest::springFollowLagsOvershootsAndSettles()
     pb.setTime(3600);
     QVERIFY(std::fabs(pb.nx() - finalX) < 3e-4);
     QVERIFY(std::fabs(pb.ny() - 550.0 / video.height()) < 3e-4);
+
+    // ...and STAYS settled — later probes (including after the idle fade-out
+    // has hidden the pointer) never drift off the track point.
+    for (const qint64 t : {qint64(4400), qint64(5200), qint64(6400)}) {
+        pb.setTime(t);
+        QVERIFY(std::fabs(pb.nx() - finalX) < 3e-4);
+        QVERIFY(std::fabs(pb.ny() - 550.0 / video.height()) < 3e-4);
+    }
+}
+
+// During a flick far faster than the spring's catch-up speed the rendered
+// pointer must be towed within a bounded distance of its target (a cursor half
+// a screen behind reads as broken), stay continuous, and settle cleanly.
+void CursorPlaybackTest::fastFlickLagBoundedAndSettles()
+{
+    const CursorTrack track = fastFlick();
+    const QSize video(1920, 1080);
+    CursorPlayback pb(QStringLiteral("flick"));
+    pb.setTracks(track, ClickTrack{}, video);
+    const CursorTrack ref = smoothedRef(track);
+
+    // Lag cap 0.06 + a little slack for the 5 ms substep target sampling.
+    double maxLag = 0.0;
+    double maxStep = 0.0;
+    double previousX = -1.0;
+    double previousY = -1.0;
+    for (qint64 t = 1000; t <= 1600; t += 8) {
+        pb.setTime(t);
+        const QPointF target = smoothedTargetAt(ref, t, video);
+        maxLag = std::max(maxLag, std::hypot(pb.nx() - target.x(), pb.ny() - target.y()));
+        if (previousX >= 0.0)
+            maxStep = std::max(maxStep,
+                               std::hypot(pb.nx() - previousX, pb.ny() - previousY));
+        previousX = pb.nx();
+        previousY = pb.ny();
+    }
+    QVERIFY(maxLag < 0.075);
+    QVERIFY(maxLag > 0.05);       // the flick genuinely engaged the cap
+    QVERIFY(maxStep < 0.05);      // towing stays continuous, no teleport
+
+    // Release: converge on the flick's endpoint with only a small overshoot.
+    const double finalX = 1800.0 / video.width();
+    const double finalY = 560.0 / video.height();
+    double maxX = 0.0;
+    for (qint64 t = 1240; t <= 2400; t += 8) {
+        pb.setTime(t);
+        maxX = std::max(maxX, double(pb.nx()));
+    }
+    QVERIFY(maxX < finalX + 0.02);
+    pb.setTime(2000);
+    QVERIFY(std::fabs(pb.nx() - finalX) < 2e-3);
+    for (const qint64 t : {qint64(2600), qint64(3000), qint64(3400)}) {
+        pb.setTime(t);
+        QVERIFY(std::fabs(pb.nx() - finalX) < 3e-4);
+        QVERIFY(std::fabs(pb.ny() - finalY) < 3e-4);
+    }
 }
 
 void CursorPlaybackTest::deterministicAcrossSeeksAndCadence()
@@ -116,6 +231,41 @@ void CursorPlaybackTest::deterministicAcrossSeeksAndCadence()
         QVERIFY(std::fabs(scrubbed.ny() - direct.ny()) < 1e-12);
         QCOMPARE(scrubbed.cursorOpacity(), direct.cursorOpacity());
         QCOMPARE(scrubbed.sampleIndexFor(t), direct.sampleIndexFor(t));
+    }
+
+    // Full sweeps over one probe grid in forward, backward and shuffled order
+    // agree pointwise: the checkpointed forward simulation is order-blind.
+    QVector<qint64> grid;
+    for (qint64 t = 0; t <= 6400; t += 97)
+        grid.append(t);
+    const int n = grid.size();
+    QVector<qreal> fx(n), fy(n), fo(n);
+    CursorPlayback forward(QStringLiteral("forward"));
+    forward.setTracks(track, ClickTrack{}, video);
+    for (int i = 0; i < n; ++i) {
+        forward.setTime(grid.at(i));
+        fx[i] = forward.nx();
+        fy[i] = forward.ny();
+        fo[i] = forward.cursorOpacity();
+    }
+    CursorPlayback backward(QStringLiteral("backward"));
+    backward.setTracks(track, ClickTrack{}, video);
+    for (int i = n - 1; i >= 0; --i) {
+        backward.setTime(grid.at(i));
+        QVERIFY(std::fabs(backward.nx() - fx.at(i)) < 1e-12);
+        QVERIFY(std::fabs(backward.ny() - fy.at(i)) < 1e-12);
+        QVERIFY(std::fabs(backward.cursorOpacity() - fo.at(i)) < 1e-12);
+    }
+    // Stride 37 is coprime with the grid size, so this visits every index once
+    // in a scrambled order without needing a random source.
+    CursorPlayback shuffled(QStringLiteral("shuffled"));
+    shuffled.setTracks(track, ClickTrack{}, video);
+    for (int k = 0; k < n; ++k) {
+        const int i = int((qint64(k) * 37) % n);
+        shuffled.setTime(grid.at(i));
+        QVERIFY(std::fabs(shuffled.nx() - fx.at(i)) < 1e-12);
+        QVERIFY(std::fabs(shuffled.ny() - fy.at(i)) < 1e-12);
+        QVERIFY(std::fabs(shuffled.cursorOpacity() - fo.at(i)) < 1e-12);
     }
 }
 
@@ -139,6 +289,37 @@ void CursorPlaybackTest::idleHideAndWake()
     pb.setTime(1600);
     QCOMPARE(pb.cursorOpacity(), 1.0);
     QVERIFY(pb.cursorVisible());
+}
+
+// Motion resuming while the idle fade-out is only partway done must pick the
+// wake fade up from the partial level — never snap opacity back to 1 between
+// two consecutive frames.
+void CursorPlaybackTest::wakeMidFadeIsContinuous()
+{
+    const CursorTrack track = moveIdleMove();
+    CursorPlayback pb(QStringLiteral("wake"));
+    pb.setTracks(track, ClickTrack{}, QSize(1920, 1080));
+
+    qreal minOpacity = 1.0;
+    qreal maxStep = 0.0;
+    qreal previous = -1.0;
+    for (qint64 t = 2500; t <= 6800; t += 8) {
+        pb.setTime(t);
+        const qreal op = pb.cursorOpacity();
+        if (previous >= 0.0)
+            maxStep = std::max(maxStep, std::fabs(op - previous));
+        minOpacity = std::min(minOpacity, op);
+        previous = op;
+    }
+    // Guards: the fade-out genuinely began (dip below 0.9) but had not finished
+    // (never reached 0) when the second move woke the pointer.
+    QVERIFY(minOpacity < 0.90);
+    QVERIFY(minOpacity > 0.03);
+    // The wake resumed from that partial level: bounded per-8ms change, no snap.
+    QVERIFY(maxStep < 0.09);
+    // Fully awake shortly after movement resumes.
+    pb.setTime(5200);
+    QCOMPARE(pb.cursorOpacity(), 1.0);
 }
 
 // A ripple is active only inside [downT, downT + rippleMs); the model reflects

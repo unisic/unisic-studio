@@ -159,9 +159,17 @@ QPointF CursorPlayback::targetAt(qint64 timeUs, int *sampleHint) const
 
 void CursorPlayback::advanceSpring(SpringState *state, qint64 destinationUs) const
 {
+    // Softer than SpringCameraEvaluator's center spring (95-255) so the pointer
+    // glides with visible lag while the camera stays authoritative.
     constexpr double stiffness = 82.0;
+    // Slightly underdamped: one restrained physical overshoot, never a wobble.
     constexpr double dampingRatio = 0.78;
+    // Caps spring-driven catch-up speed (normalized frames/s) after seeks/jumps.
     constexpr double maxVelocity = 3.0;
+    // Hard bound on how far the rendered pointer may trail its target (~6% of
+    // the frame, ~115 px at 1920) — a fast flick outruns the soft spring, and a
+    // cursor half a screen behind reads as broken rather than floaty.
+    constexpr double maxLagDistance = 0.06;
     const double omega = std::sqrt(stiffness);
     const double damping = 2.0 * dampingRatio * omega;
 
@@ -182,6 +190,15 @@ void CursorPlayback::advanceSpring(SpringState *state, qint64 destinationUs) con
             state->velocity *= scale;
         }
         state->position += state->velocity * dt;
+
+        // Beyond maxLagDistance the pointer is towed elastically at the
+        // target's own pace; the spring resumes and finishes the catch-up as
+        // soon as the target slows. Position-only — velocity stays
+        // spring-integrated, which keeps the release overshoot tiny.
+        const QPointF lagVector = target - state->position;
+        const double lag = std::hypot(lagVector.x(), lagVector.y());
+        if (lag > maxLagDistance)
+            state->position = target - lagVector * (maxLagDistance / lag);
 
         const double oldX = state->position.x();
         const double oldY = state->position.y();
@@ -278,9 +295,18 @@ qreal CursorPlayback::opacityAt(qint64 timeMs, bool recordedVisible) const
     };
     if (current && timeMs <= current->endMs) {
         const qint64 priorEnd = previous ? previous->endMs : firstMs;
-        if (current->startMs - priorEnd > kIdleDelayMs + kIdleFadeMs)
-            return smooth(double(timeMs - current->startMs) / kWakeFadeMs);
-        return 1.0;
+        const qint64 idleBeforeRun = current->startMs - priorEnd;
+        // Level the idle fade-out had reached when this run began. Waking
+        // mid-fade resumes from that level — the old binary check snapped a
+        // partially faded pointer straight back to 1.0.
+        const double base = idleBeforeRun <= kIdleDelayMs
+                                ? 1.0
+                                : 1.0 - smooth(double(idleBeforeRun - kIdleDelayMs) / kIdleFadeMs);
+        if (base >= 1.0)
+            return 1.0;
+        // Written as 1 - remainder so a finished wake fade yields exactly 1.0.
+        return 1.0 - (1.0 - base)
+                         * (1.0 - smooth(double(timeMs - current->startMs) / kWakeFadeMs));
     }
 
     const qint64 lastMotion = current ? current->endMs : firstMs;

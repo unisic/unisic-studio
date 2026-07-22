@@ -212,10 +212,13 @@ void ExportController::start(StudioProject *project)
         outH = qMax(2, m_customHeight);
     } else {
         int targetH = src.height() > 0 ? src.height() : 1080;
+        // These presets CAP, they do not SET: a 720p source exported as "1080p"
+        // would be upscaled — blurrier than the source, ~2x the bitrate, zero
+        // added detail. Only ever scale down.
         if (m_resolution == QLatin1String("1080p"))
-            targetH = 1080;
+            targetH = qMin(targetH, 1080);
         else if (m_resolution == QLatin1String("720p"))
-            targetH = 720;
+            targetH = qMin(targetH, 720);
         outH = targetH;
         outW = int(qRound(targetH * compAspect));
     }
@@ -246,6 +249,9 @@ void ExportController::start(StudioProject *project)
     s.trimInMs = trimIn;
     s.durMs = durMs;
     s.fps = fps;
+    // Clip audio travels with trim/aspect: same project → same export result.
+    s.audioMuted = project->audioMuted();
+    s.audioVolume = project->audioVolume();
     s.outW = outW;
     s.outH = outH;
     s.format = m_format;

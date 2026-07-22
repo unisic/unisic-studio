@@ -68,13 +68,28 @@ void PreviewControllerTest::playbackStopsExactlyAtTrimOut()
     PreviewController preview(project.data());
     QSignalSpy ended(&preview, &PreviewController::playbackRangeEnded);
 
+    preview.sync(0, true);
+    QVERIFY(preview.playing());
+    QCOMPARE(preview.timeMs(), qreal(100)); // active playback clamps to trim-in
+    preview.snap(320);
+    QVERIFY(!preview.playing());            // snap pauses
     preview.sync(320, true);
-    QTRY_COMPARE_WITH_TIMEOUT(ended.count(), 1, 500);
+
+    // The clock is advanced by frameTick() (the QML FrameAnimation's per-rendered-
+    // frame call), not an internal timer — simulate render frames until the trim
+    // range ends.
+    for (int i = 0; i < 60 && ended.count() == 0; ++i) {
+        QTest::qWait(16);
+        preview.frameTick();
+    }
+    QCOMPARE(ended.count(), 1);
+    QVERIFY(!preview.playing());            // range end stops the drive
     QCOMPARE(preview.timeMs(), qreal(360));
     QCOMPARE(preview.cursor()->timeMs(), qreal(360));
 
-    // Once stopped, elapsed wall time cannot drift camera/cursor past trim-out.
+    // Once stopped, further frame ticks / wall time cannot drift past trim-out.
     QTest::qWait(60);
+    preview.frameTick();
     QCOMPARE(preview.timeMs(), qreal(360));
 }
 

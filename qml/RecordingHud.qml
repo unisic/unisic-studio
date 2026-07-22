@@ -62,9 +62,16 @@ Window {
            | Qt.Tool | Qt.WindowDoesNotAcceptFocus
 
     // Honoured only on the plain-toplevel fallback (X11/XWayland). Under layer-shell
-    // the compositor anchors us bottom-centre and ignores x/y.
-    x: Screen.virtualX + Math.round((Screen.width - width) / 2)
-    y: Screen.virtualY + Screen.height - height - 48
+    // the compositor anchors us per hudPlacement and ignores x/y.
+    readonly property string _place: Studio.settings.hudPlacement
+    x: {
+        var edge = 48
+        if (_place.endsWith("Left"))  return Screen.virtualX + edge
+        if (_place.endsWith("Right")) return Screen.virtualX + Screen.width - width - edge
+        return Screen.virtualX + Math.round((Screen.width - width) / 2)
+    }
+    y: _place.startsWith("top") ? Screen.virtualY + 48
+                                : Screen.virtualY + Screen.height - height - 48
 
     function mmss(total) {
         if (isNaN(total) || total < 0) total = 0

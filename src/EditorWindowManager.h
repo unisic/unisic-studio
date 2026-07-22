@@ -35,6 +35,12 @@ public:
 
     int openCount() const { return m_windows.size(); }
 
+    // Whether an open editor window is editing the project file at
+    // `projectFilePath` (compared by absolute path against each project's
+    // "_sourcePath", stamped on open and on save). Freshly imported, never-saved
+    // projects have no source path and never match — they have no file to guard.
+    bool hasOpen(const QString &projectFilePath) const;
+
 signals:
     void openCountChanged();
 

@@ -1,5 +1,6 @@
 #pragma once
 #include <QObject>
+#include <QPointer>
 #include <QTimer>
 #include <QVariantList>
 #include <QVector>
@@ -16,6 +17,7 @@ class RecentProjects;
 class EditorWindowManager;
 class HudManager;       // fwd-decl: owns the always-on-top recording HUD window
 class StudioRecorder;   // fwd-decl: capture subsystem, wired up in the .cpp
+class QQuickWindow;     // fwd-decl: the shell window handle (lifetime rule)
 
 // Application facade exposed to QML as the "Studio" context property (analogous
 // to Unisic's "App"). It COORDINATES — the substantial logic lives in focused
@@ -35,6 +37,10 @@ class StudioApp : public QObject
     Q_PROPERTY(bool capVideoPlayback READ capVideoPlayback CONSTANT)
     // Recent-project tiles for the launcher: [{path,name,durationMs,lastOpened}].
     Q_PROPERTY(QVariantList recentProjects READ recentProjects NOTIFY recentProjectsChanged)
+    // Whether a portal source pick is stored (gates the Settings "Forget" row).
+    // The token itself stays out of QML — it's an opaque portal handle.
+    Q_PROPERTY(bool hasRememberedScreencastSource READ hasRememberedScreencastSource
+               NOTIFY hasRememberedScreencastSourceChanged)
 
     // Recording state machine, exposed thin (the logic lives in StudioRecorder).
     Q_PROPERTY(int recorderState READ recorderState NOTIFY recorderStateChanged)
@@ -93,6 +99,15 @@ public:
     // Open an existing project (accepts a file:// url or a plain path).
     Q_INVOKABLE bool openProject(const QString &pathOrUrl);
 
+    // Delete a recording from disk and drop it from the recents grid: the
+    // sidecar, the master video it references, and any webcam clip. Trash-first
+    // (recoverable), plain remove() fallback on mounts without a trash dir.
+    // Refuses while the project is open in an editor window. IRREVERSIBLE past
+    // the trash — QML must confirm first (the grid's UConfirmDialog does).
+    // Outcome (including trash vs permanent) is surfaced via notified();
+    // returns true once the recording is gone from disk and the grid.
+    Q_INVOKABLE bool deleteRecording(const QString &pathOrUrl);
+
     // Save silently: to the project's current path, or (first save) into the
     // configured projects directory named after the video. Save As always asks.
     Q_INVOKABLE bool saveProject(StudioProject *project);
@@ -132,6 +147,20 @@ public:
     Q_INVOKABLE void stopRecording();
     Q_INVOKABLE void togglePauseRecording();
     Q_INVOKABLE void cancelRecording();
+    // Drop the stored portal source pick, so the next recording asks again.
+    Q_INVOKABLE void forgetScreencastSource();
+    bool hasRememberedScreencastSource() const;
+
+    // The shell window, for explicit lifetime: the process ends when the last
+    // window the user can see is gone (see maybeQuitOnAllWindowsClosed).
+    void setMainWindow(QQuickWindow *win);
+
+    // Re-show and raise the projects/launcher window. Closing it while an editor
+    // is open only HIDES it (it is the QML engine root, not destroyed); without
+    // this the session was orphaned — no way back to the launcher, and the next
+    // editor-close would silently quit. The editor's "Projects" affordance calls
+    // this. Mirrors the single-instance raise in main.cpp.
+    Q_INVOKABLE void showMainWindow();
 
     // --- auto-zoom (M3) --------------------------------------------------------
     // Re-run the auto-camera with the project's current Params, preserving Manual
@@ -178,6 +207,7 @@ public:
 
 signals:
     void recentProjectsChanged();
+    void hasRememberedScreencastSourceChanged();
     void recorderStateChanged();
     void recorderElapsedChanged();
     void recorderCountdownChanged();
@@ -203,6 +233,11 @@ private:
     void generateZoom(StudioProject *project, bool onlyIfEmpty);
 
     void ensureRecorder();                 // lazy construct + wire on first use
+    // Explicit process lifetime: quit when the shell window is hidden AND no
+    // editor windows remain AND no recording is live. quitOnLastWindowClosed
+    // proved racy here (the process intermittently outlived its last window),
+    // so the rule is enforced deliberately instead of inferred by Qt.
+    void maybeQuitOnAllWindowsClosed();
     void setRecorderState(RecorderState s);
     void onRecorderArmed();                // start the countdown (or commit now)
     void stopCountdown();
@@ -215,6 +250,10 @@ private:
     void smokeNext();
     QString devMakeTestVideo();
     void runSmokeExport(const QString &format, const QString &label);
+
+    // The shell window (owned by the QML engine; QPointer so a destroyed window
+    // reads as "not visible" instead of dangling).
+    QPointer<QQuickWindow> m_mainWin;
 
     // Parent-owned (constructed with `this`): die with the facade, no leaks.
     StudioSettings *m_settings;

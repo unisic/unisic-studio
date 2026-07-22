@@ -27,9 +27,12 @@
 
 namespace {
 
-constexpr int kWidth = 960;
-constexpr int kHeight = 540;
-constexpr qint64 kDurationMs = 6000;
+constexpr int kSourceWidth = 960;
+constexpr int kSourceHeight = 540;
+constexpr int kOutputWidth = 304;
+constexpr int kOutputHeight = 540;
+constexpr qint64 kDurationMs = 7000;
+constexpr qint64 kTrimInMs = 500;
 constexpr double kFps = 60.0;
 
 void appendLine(CursorTrack *track, QPointF from, QPointF to, qint64 startMs, qint64 endMs)
@@ -76,17 +79,21 @@ struct PixelBounds {
     int width = 0;
     int height = 0;
     int pixels = 0;
+    double centerX = 0.0;
+    double centerY = 0.0;
 };
 
 PixelBounds greenCursorBounds(const QByteArray &rgb, int centerX, int centerY)
 {
-    if (rgb.size() < kWidth * kHeight * 3)
+    if (rgb.size() < kOutputWidth * kOutputHeight * 3)
         return {};
-    int minX = kWidth, minY = kHeight, maxX = -1, maxY = -1;
+    int minX = kOutputWidth, minY = kOutputHeight, maxX = -1, maxY = -1;
+    qint64 sumX = 0, sumY = 0;
+    int hits = 0;
     const uchar *data = reinterpret_cast<const uchar *>(rgb.constData());
-    for (int y = std::max(0, centerY - 55); y <= std::min(kHeight - 1, centerY + 55); ++y) {
-        for (int x = std::max(0, centerX - 55); x <= std::min(kWidth - 1, centerX + 55); ++x) {
-            const int offset = (y * kWidth + x) * 3;
+    for (int y = std::max(0, centerY - 55); y <= std::min(kOutputHeight - 1, centerY + 55); ++y) {
+        for (int x = std::max(0, centerX - 55); x <= std::min(kOutputWidth - 1, centerX + 55); ++x) {
+            const int offset = (y * kOutputWidth + x) * 3;
             const int red = data[offset];
             const int green = data[offset + 1];
             const int blue = data[offset + 2];
@@ -96,10 +103,13 @@ PixelBounds greenCursorBounds(const QByteArray &rgb, int centerX, int centerY)
             minY = std::min(minY, y);
             maxX = std::max(maxX, x);
             maxY = std::max(maxY, y);
+            sumX += x;
+            sumY += y;
+            ++hits;
         }
     }
-    return maxX >= minX ? PixelBounds{maxX - minX + 1, maxY - minY + 1,
-                                      (maxX - minX + 1) * (maxY - minY + 1)}
+    return maxX >= minX ? PixelBounds{maxX - minX + 1, maxY - minY + 1, hits,
+                                      double(sumX) / hits, double(sumY) / hits}
                         : PixelBounds{};
 }
 
@@ -136,9 +146,9 @@ void MotionSelfTest::run(StudioApp *studio)
     generator.start(ffmpeg,
                     {QStringLiteral("-y"), QStringLiteral("-v"), QStringLiteral("error"),
                      QStringLiteral("-f"), QStringLiteral("lavfi"), QStringLiteral("-i"),
-                     QStringLiteral("testsrc2=size=%1x%2:rate=60:duration=6")
-                         .arg(kWidth)
-                         .arg(kHeight),
+                     QStringLiteral("testsrc2=size=%1x%2:rate=60:duration=7")
+                         .arg(kSourceWidth)
+                         .arg(kSourceHeight),
                      QStringLiteral("-vf"), QStringLiteral("hue=s=0"),
                      QStringLiteral("-pix_fmt"), QStringLiteral("yuv420p"), source});
     if (!generator.waitForFinished(60000) || generator.exitCode() != 0
@@ -151,7 +161,7 @@ void MotionSelfTest::run(StudioApp *studio)
     project->setVideoAbsPath(source);
     project->setDurationMs(kDurationMs);
     project->setFps(kFps);
-    project->setVideoSize(QSize(kWidth, kHeight));
+    project->setVideoSize(QSize(kSourceWidth, kSourceHeight));
     project->setCursorMode(QStringLiteral("metadata"));
     project->setHadClickCapture(true);
 
@@ -169,14 +179,10 @@ void MotionSelfTest::run(StudioApp *studio)
     appendClick(&clicks, 2600, focus);
     appendClick(&clicks, 2800, focus + QPointF(5, -4));
     project->setClickTrack(clicks);
-    studio->regenerateZoom(project);
-    // Final manual target exercises the supported editor maximum independently
-    // of the smarter auto cap (2.55x). The cursor-size compensation must remain
-    // readable and crisp at 2.8x too.
-    studio->addManualZoom(project, 5400, finalCursor.x() / kWidth,
-                          finalCursor.y() / kHeight, 2.8);
 
     StyleModel *style = project->style();
+    style->setAspect(QStringLiteral("9:16"));
+    style->setFillMode(QStringLiteral("fill"));
     style->setPaddingPct(0);
     style->setCornerRadius(0);
     style->setShadowOpacity(0);
@@ -187,15 +193,22 @@ void MotionSelfTest::run(StudioApp *studio)
     style->setClickRipple(true);
     style->setRippleColor(QColor(0, 255, 0));
 
+    studio->regenerateZoom(project);
+    // Final manual target exercises the supported editor maximum independently
+    // of the smarter auto cap (2.55x). The cursor-size compensation must remain
+    // readable and crisp at 2.8x too.
+    studio->addManualZoom(project, 6300, finalCursor.x() / kSourceWidth,
+                          finalCursor.y() / kSourceHeight, 2.8);
+
     RenderPipeline::Settings settings;
     settings.master = source;
     settings.style = style;
     settings.videoSize = project->videoSize();
-    settings.trimInMs = 0;
-    settings.durMs = kDurationMs;
+    settings.trimInMs = kTrimInMs;
+    settings.durMs = kDurationMs - kTrimInMs;
     settings.fps = kFps;
-    settings.outW = kWidth;
-    settings.outH = kHeight;
+    settings.outW = kOutputWidth;
+    settings.outH = kOutputHeight;
     settings.format = QStringLiteral("mp4");
     settings.crf = 20;
     settings.outputPath = output;
@@ -241,7 +254,7 @@ void MotionSelfTest::run(StudioApp *studio)
                      {QStringLiteral("-v"), QStringLiteral("error"), QStringLiteral("-i"), output,
                       QStringLiteral("-f"), QStringLiteral("null"), QStringLiteral("-")});
         const bool decoded = verify.waitForFinished(60000) && verify.exitCode() == 0;
-        const int expectedFrames = int(std::lround(kDurationMs / 1000.0 * kFps));
+        const int expectedFrames = int(std::lround(settings.durMs / 1000.0 * kFps));
         const bool frameCountOk = std::abs(samples->size() - expectedFrames) <= 1;
         const bool outputOk = QFileInfo::exists(output) && QFileInfo(output).size() > 0 && decoded;
 
@@ -253,44 +266,70 @@ void MotionSelfTest::run(StudioApp *studio)
                 });
             return it == samples->cend() ? TrajectorySample{} : *it;
         };
-        const qint64 cursorProbeTimes[] = {1000, 3500, 5800};
+        const qint64 cursorProbeTimes[] = {1000, 3500, 6800};
         PixelBounds cursorBounds[3];
         double cameraZooms[3] = {};
+        double cursorCenterErrors[3] = {};
+        const double baseCameraWidth = KeyframeEngine::cameraRect(
+            settings.videoSize, QStringLiteral("9:16"), QPointF(0.5, 0.5), 1.0).width();
         bool cursorScaleOk = true;
         for (int i = 0; i < 3; ++i) {
             const TrajectorySample sample = sampleAt(cursorProbeTimes[i]);
-            cameraZooms[i] = 1.0 / std::max(1.0e-9, sample.cameraRect.width());
+            cameraZooms[i] = baseCameraWidth / std::max(1.0e-9, sample.cameraRect.width());
             const int x = int(std::lround((sample.cursor.x() - sample.cameraRect.x())
-                                          / sample.cameraRect.width() * kWidth));
+                                          / sample.cameraRect.width() * kOutputWidth));
             const int y = int(std::lround((sample.cursor.y() - sample.cameraRect.y())
-                                          / sample.cameraRect.height() * kHeight));
+                                          / sample.cameraRect.height() * kOutputHeight));
             cursorBounds[i] = greenCursorBounds(
-                extractRgbFrame(ffmpeg, output, cursorProbeTimes[i]), x, y);
+                extractRgbFrame(ffmpeg, output,
+                                cursorProbeTimes[i] - settings.trimInMs), x, y);
+            cursorCenterErrors[i] = std::hypot(cursorBounds[i].centerX - x,
+                                               cursorBounds[i].centerY - y);
             cursorScaleOk = cursorScaleOk && cursorBounds[i].width >= 8
                             && cursorBounds[i].height >= 8 && cursorBounds[i].width <= 50
-                            && cursorBounds[i].height <= 50;
+                            && cursorBounds[i].height <= 50 && cursorCenterErrors[i] < 3.5;
         }
         const int minCursorWidth = std::min({cursorBounds[0].width, cursorBounds[1].width,
                                              cursorBounds[2].width});
         const int maxCursorWidth = std::max({cursorBounds[0].width, cursorBounds[1].width,
                                              cursorBounds[2].width});
+        const int minCursorHeight = std::min({cursorBounds[0].height, cursorBounds[1].height,
+                                              cursorBounds[2].height});
+        const int maxCursorHeight = std::max({cursorBounds[0].height, cursorBounds[1].height,
+                                              cursorBounds[2].height});
         cursorScaleOk = cursorScaleOk && minCursorWidth > 0
-                        && double(maxCursorWidth) / minCursorWidth < 1.30
-                        && cameraZooms[0] < 1.05 && cameraZooms[1] > 1.8
+                         && double(maxCursorWidth) / minCursorWidth < 1.30
+                         && minCursorHeight > 0
+                         && double(maxCursorHeight) / minCursorHeight < 1.30
+                         && cameraZooms[0] < 1.05 && cameraZooms[1] > 1.35
                         && cameraZooms[2] > 2.65;
+        // Follow-pan smoothness guard. The old distance-gated pan targets produced a
+        // "staircase" the per-frame edge-jump budget (0.03) could NOT catch: a run of
+        // sub-jump steps still passes it. Frame-to-frame center ACCELERATION is the
+        // discriminator — a staircase spikes it, a smoothed glide keeps it low. This
+        // budget is provisional: it is set generously so it never false-fails, and
+        // should be tightened toward the measured post-smoothing baseline the first
+        // time --motion-test runs on a live Wayland session (the value is printed as
+        // "centerA=" below). See emitDeadZonePan() in KeyframeEngine.cpp.
+        constexpr double kCenterAccelBudget = 40.0;   // frame-fractions / s^2, provisional
         const bool metricsOk = metrics.finite && metrics.bounded
                                && metrics.maxCameraEdgeJump < 0.03
                                && metrics.maxCameraCenterVelocity < 1.40
+                               && metrics.maxCameraCenterAcceleration < kCenterAccelBudget
                                && metrics.maxZoomVelocity < 3.0
                                && metrics.maxCursorVelocity < 3.05
                                && metrics.maxCenterOvershootRatio < 0.02
                                && metrics.maxZoomOvershootRatio < 0.02
+                               && metrics.unsettledSegments == 0
+                               && metrics.maxSettlingMs <= 1200
                                && metrics.holdDrift < 0.0025
                                && metrics.holdRmsVelocity < 0.02;
 
         fprintf(stderr,
-                "motion-test: frames=%lld expected=%d output=%s decoded=%s deterministic=%s "
+                "motion-test: trim=%lldms frames=%lld expected=%d output=%s decoded=%s "
+                "deterministic=%s "
                 "bounded=%s\n",
+                static_cast<long long>(settings.trimInMs),
                 static_cast<long long>(samples->size()), expectedFrames, qPrintable(output),
                 decoded ? "yes" : "no", deterministic ? "yes" : "no",
                 metrics.bounded ? "yes" : "no");
@@ -303,16 +342,19 @@ void MotionSelfTest::run(StudioApp *studio)
                 metrics.maxCursorAcceleration);
         fprintf(stderr,
                 "motion-test: overshoot(center=%.4f zoom=%.4f) hold(drift=%.6f rmsV=%.6f) "
-                "settleMax=%lldms trajectory=%s\n",
+                "settleMax=%lldms settled=%d unsettled=%d trajectory=%s\n",
                 metrics.maxCenterOvershootRatio, metrics.maxZoomOvershootRatio,
                 metrics.holdDrift, metrics.holdRmsVelocity,
-                static_cast<long long>(metrics.maxSettlingMs), qPrintable(trajectoryPath));
+                static_cast<long long>(metrics.maxSettlingMs), metrics.settledSegments,
+                metrics.unsettledSegments, qPrintable(trajectoryPath));
         fprintf(stderr,
-                "motion-test: cursor screen bounds 1x=%dx%d  auto(%.2fx)=%dx%d  "
-                "manual(%.2fx)=%dx%d compensation=%s\n",
-                cursorBounds[0].width, cursorBounds[0].height, cameraZooms[1],
-                cursorBounds[1].width, cursorBounds[1].height, cameraZooms[2],
-                cursorBounds[2].width, cursorBounds[2].height,
+                "motion-test: 9:16 cursor bounds 1x=%dx%d(e=%.2fpx)  "
+                "auto(%.2fx)=%dx%d(e=%.2fpx)  manual(%.2fx)=%dx%d(e=%.2fpx) "
+                "compensation=%s\n",
+                cursorBounds[0].width, cursorBounds[0].height, cursorCenterErrors[0],
+                cameraZooms[1], cursorBounds[1].width, cursorBounds[1].height,
+                cursorCenterErrors[1], cameraZooms[2], cursorBounds[2].width,
+                cursorBounds[2].height, cursorCenterErrors[2],
                 cursorScaleOk ? "yes" : "no");
 
         const bool ok = csvOk && outputOk && frameCountOk && deterministic && metricsOk

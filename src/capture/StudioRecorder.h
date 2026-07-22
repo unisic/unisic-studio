@@ -118,6 +118,9 @@ private:
     QSize m_heldStreamSize;
 
     ScreenCastSession *m_session = nullptr;
+    // The token we replayed into the portal this session, if any. Non-empty
+    // means a failure might be the token's fault and it should be dropped.
+    QString m_replayedToken;
     PipeWireGrabber *m_grabber = nullptr;   // owned; guarded by HAVE_PIPEWIRE in .cpp
     ClickCapture *m_clicks = nullptr;
     QProcess *m_ffmpeg = nullptr;
@@ -158,6 +161,7 @@ private:
     // Raw* structs so this TU never includes a CursorSample-defining header.
     QVector<RecordingAssembler::RawCursor> m_cursorRaw;
     QVector<RecordingAssembler::RawClick> m_clickRaw;
+    QVector<qint64> m_keyDownRaw;   // key-DOWN mono-ns (timing only), coalesced at assembly
     QVector<RecordingAssembler::RawShape> m_shapes;
 
     // Recording metadata for the sidecar.

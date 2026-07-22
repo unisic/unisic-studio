@@ -11,6 +11,7 @@ class TrajectoryMetricsTest : public QObject
 private slots:
     void constantHoldHasNoJitter();
     void detectsVelocityOvershootAndBounds();
+    void shortSegmentStillMeasuresOvershoot();
     void writesCsv();
 };
 
@@ -28,6 +29,8 @@ void TrajectoryMetricsTest::constantHoldHasNoJitter()
     QCOMPARE(metrics.maxZoomVelocity, 0.0);
     QCOMPARE(metrics.holdDrift, 0.0);
     QCOMPARE(metrics.holdRmsVelocity, 0.0);
+    QCOMPARE(metrics.settledSegments, 1);
+    QCOMPARE(metrics.unsettledSegments, 0);
 }
 
 void TrajectoryMetricsTest::detectsVelocityOvershootAndBounds()
@@ -49,6 +52,8 @@ void TrajectoryMetricsTest::detectsVelocityOvershootAndBounds()
     QVERIFY(metrics.maxZoomOvershootRatio > 0.0);
     QVERIFY(metrics.maxCenterOvershootRatio > 0.0);
     QVERIFY(metrics.maxCursorVelocity > 0.0);
+    QCOMPARE(metrics.settledSegments, 0);
+    QCOMPARE(metrics.unsettledSegments, 1);
 
     samples.last().cameraRect = QRectF(-0.1, 0, 1, 1);
     QVERIFY(!analyzeTrajectory(samples).bounded);
@@ -67,6 +72,21 @@ void TrajectoryMetricsTest::writesCsv()
     const QByteArray csv = file.readAll();
     QVERIFY(csv.startsWith("t_ms,target_x"));
     QVERIFY(csv.contains("0,0.000000000"));
+}
+
+void TrajectoryMetricsTest::shortSegmentStillMeasuresOvershoot()
+{
+    const QRectF target(0.35, 0.25, 0.5, 0.5);
+    const QVector<TrajectorySample> samples{
+        {0, QRectF(0, 0, 1, 1), target, QPointF(0.5, 0.5), true},
+        {50, QRectF(0.39, 0.27, 0.46, 0.46), target, QPointF(0.5, 0.5), true},
+        {100, QRectF(0.39, 0.27, 0.46, 0.46), QRectF(0, 0, 1, 1),
+         QPointF(0.5, 0.5), true}};
+    const TrajectoryMetrics metrics = analyzeTrajectory(samples);
+    QVERIFY(metrics.maxZoomOvershootRatio > 0.0);
+    QVERIFY(metrics.maxCenterOvershootRatio > 0.0);
+    QCOMPARE(metrics.settledSegments, 0);
+    QCOMPARE(metrics.unsettledSegments, 0); // both target windows are <150 ms
 }
 
 QTEST_GUILESS_MAIN(TrajectoryMetricsTest)

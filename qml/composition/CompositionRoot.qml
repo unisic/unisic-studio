@@ -31,13 +31,21 @@ Item {
     // PosterExtractor; export: RenderPipeline's one-shot extract). Empty → the
     // desktopBlur background falls back to the flat fill colour.
     property string posterSource: ""
-    // Editor-only: while a zoom keyframe's on-canvas rect editor is open, show the
-    // WHOLE source frame (source aspect, identity crop) so the crop box maps 1:1 to
-    // the video card. The export renderer never sets this.
+    // Editor-only: true while a zoom keyframe's on-canvas rect editor is open.
+    // Fit mode shows the whole source frame (identity crop, source-aspect card,
+    // matching the exported letterbox); fill mode keeps the card at the OUTPUT
+    // aspect — the same geometry the export renders — and shows `editView`, a
+    // zoomed-out output-aspect context region around the keyframe being edited.
+    // The export renderer never sets either property.
     property bool editRect: false
+    property rect editView: Qt.rect(0, 0, 0, 0)   // width<=0 → fall back to base crop
 
     // The consumer parents its video (or poster) Item here and anchors.fill it.
     readonly property alias videoSlot: videoZoom
+    // Editor-only overlay slot OUTSIDE the camera transform (the on-canvas crop
+    // editor maps its own coordinates through editView, so it must not inherit
+    // the anisotropic zoom scale). The export renderer never parents into it.
+    readonly property alias editorSlot: videoRegion
 
     // ---- Style accessors (safe fallbacks while styleModel is null) ----------
     readonly property string _bgType:        styleModel ? styleModel.backgroundType : "gradient"
@@ -80,7 +88,10 @@ Item {
     // behaviour); in fit mode the card keeps the SOURCE aspect and is letterboxed
     // into the output canvas. Coincides for a source-aspect output.
     readonly property string _fillMode: styleModel ? styleModel.fillMode : "fill"
-    readonly property bool   _fill:      _fillMode === "fill" && !editRect
+    // NOT gated on editRect: while editing in fill mode the card must KEEP the
+    // output aspect (what the export renders) — flipping to source aspect here
+    // was the "editor shows 16:9, export crops to 9:16" bug.
+    readonly property bool   _fill:      _fillMode === "fill"
     readonly property real   _videoAspect: _fill ? _aspect : _srcAspect
     // Largest centred OUTPUT-aspect crop of the source (source-normalised coords).
     readonly property real _cropW: _aspect >= _srcAspect ? 1.0 : _aspect / _srcAspect
@@ -92,8 +103,16 @@ Item {
     // crop. (Fill keyframes never evaluate to an exact identity, so real camera
     // motion is untouched; a source-aspect output makes the crop the whole frame.)
     readonly property rect _effZoom: {
-        if (editRect)
-            return Qt.rect(0, 0, 1, 1)        // show the whole source while editing a crop
+        if (editRect) {
+            if (!_fill)
+                return Qt.rect(0, 0, 1, 1)    // fit: whole source, source-aspect card
+            // Fill: an output-aspect context region (editView from the editor, or
+            // the centred base crop). Never the identity — a source-aspect rect on
+            // the output-aspect card would stretch the video.
+            if (editView.width > 0.0001)
+                return editView
+            return Qt.rect((1 - _cropW) / 2, (1 - _cropH) / 2, _cropW, _cropH)
+        }
         if (!_fill)
             return zoomRect
         if (Math.abs(zoomRect.x) < 1e-6 && Math.abs(zoomRect.y) < 1e-6

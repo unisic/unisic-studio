@@ -319,6 +319,31 @@ Item {
                             }
                         }
                         SettingRow {
+                            label: qsTr("Stop after")
+                            // UValueCombo renders `value + suffix` verbatim, so 0
+                            // can't display as "Unlimited" without a kit change.
+                            help: qsTr("Automatically end the recording once it reaches this length. 0 means no limit.")
+                            UValueCombo {
+                                width: 120
+                                values: [0, 300, 600, 1800]
+                                // Mandatory: these default to 0/100, and the combo
+                                // clamps, so 1800 would silently become 100.
+                                from: 0; to: 7200
+                                suffix: qsTr(" s")
+                                value: Studio.settings.recordMaxDurationSec
+                                onChanged: (v) => Studio.settings.recordMaxDurationSec = v
+                            }
+                        }
+                        SettingRow {
+                            label: qsTr("Remembered screen")
+                            help: qsTr("Unisic Studio reuses your last screen choice so the system picker only appears once. Forget it to pick a different screen or window next time.")
+                            UButton {
+                                text: qsTr("Forget")
+                                enabled: Studio.hasRememberedScreencastSource
+                                onClicked: Studio.forgetScreencastSource()
+                            }
+                        }
+                        SettingRow {
                             label: qsTr("Hide window while recording")
                             help: qsTr("The main window disappears during capture and returns when you stop.")
                             USwitch {
@@ -327,8 +352,29 @@ Item {
                             }
                         }
                         SettingRow {
+                            label: qsTr("Hide indicator while recording")
+                            help: qsTr("Fully hide the recording indicator during capture so it never appears in the video. A full-screen recording cannot exclude an on-screen overlay any other way. While hidden, stop/pause/cancel with a hotkey bound to “unisic-studio --stop” (or --pause / --cancel).")
+                            USwitch {
+                                checked: Studio.settings.hudHideWhileRecording
+                                onToggled: (c) => Studio.settings.hudHideWhileRecording = c
+                            }
+                        }
+                        SettingRow {
+                            label: qsTr("Indicator position")
+                            help: qsTr("Where the recording indicator and countdown appear on screen.")
+                            UComboBox {
+                                width: 150
+                                readonly property var ids: ["bottomCenter", "bottomLeft", "bottomRight",
+                                                            "topCenter", "topLeft", "topRight"]
+                                model: [qsTr("Bottom center"), qsTr("Bottom left"), qsTr("Bottom right"),
+                                        qsTr("Top center"), qsTr("Top left"), qsTr("Top right")]
+                                currentIndex: Math.max(0, ids.indexOf(Studio.settings.hudPlacement))
+                                onActivated: (i) => Studio.settings.hudPlacement = ids[i]
+                            }
+                        }
+                        SettingRow {
                             label: qsTr("Collapse recording HUD")
-                            help: qsTr("Shrink the HUD to a thin bottom-edge sliver while recording so it barely shows in the capture. Hover it (or pause) to expand.")
+                            help: qsTr("When the indicator is NOT fully hidden: shrink it to a thin edge sliver while recording so it barely shows in the capture. Hover it (or pause) to expand.")
                             USwitch {
                                 checked: Studio.settings.hudCollapseWhileRecording
                                 onToggled: (c) => Studio.settings.hudCollapseWhileRecording = c
@@ -384,6 +430,14 @@ Item {
                             USwitch {
                                 checked: Studio.settings.clickCaptureEnabled
                                 onToggled: (c) => Studio.settings.clickCaptureEnabled = c
+                            }
+                        }
+                        SettingRow {
+                            label: qsTr("Zoom while typing")
+                            help: qsTr("Hold the zoom on the field you're typing into. Records only WHEN a key is pressed — never which key, never any text. Applies to new recordings.")
+                            USwitch {
+                                checked: Studio.settings.typingZoomEnabled
+                                onToggled: (c) => Studio.settings.typingZoomEnabled = c
                             }
                         }
 

@@ -84,13 +84,18 @@ public:
     // locked) so the engine can route AROUND them — any auto span overlapping a
     // pinned keyframe's [t-easeIn, t+easeOut] window is trimmed away from the
     // window, and dropped if trimming leaves it too short to be worth a zoom.
+    // typingBursts are [startMs,endMs] spans of sustained keyboard activity
+    // (timing only — never keycodes). Each becomes dwell evidence anchored on the
+    // cursor position at its start, so the camera HOLDS its zoom through typing
+    // (usually into a field you just clicked) instead of yo-yoing out mid-type.
     static QVector<Keyframe> generate(const CursorTrack &cursor,
                                       const ClickTrack &clicks,
                                       QSize videoSize,
                                       qint64 durationMs,
                                       const QString &aspect,
                                       const Params &params,
-                                      const QVector<Keyframe> &pinned = {});
+                                      const QVector<Keyframe> &pinned = {},
+                                      const QVector<QPair<qint64, qint64>> &typingBursts = {});
 
     // Parse an "W:H" aspect string to a ratio; <=0 or malformed -> fallback.
     static double aspectRatio(const QString &aspect, double fallback);

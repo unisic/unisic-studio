@@ -146,6 +146,7 @@ int ZoomTimeline::moveKeyframe(int index, qint64 newT)
 
     Keyframe kf = m_keyframes.at(index);
     kf.tMs = newT;
+    kf.source = Manual; // retiming is a user edit — see setKeyframeRect()
 
     // Remove then sorted-reinsert. Compute the destination against the list as
     // it looks WITHOUT the moved row so the returned index is the real landing
@@ -168,7 +169,28 @@ void ZoomTimeline::setKeyframeRect(int index, const QRectF &rect)
     if (index < 0 || index >= m_keyframes.size())
         return;
     m_keyframes[index].rect = rect;
-    emit dataChanged(this->index(index), this->index(index), {RectRole});
+    // Editing an auto keyframe makes it the user's — otherwise the next
+    // regenerate drops it as its own output (replaceAutoKeyframes spares only
+    // Manual/locked) and the edit silently vanishes. SourceRole must ride along
+    // or the timeline pill won't repaint into its Manual tint.
+    m_keyframes[index].source = Manual;
+    emit dataChanged(this->index(index), this->index(index), {RectRole, SourceRole});
+    emit changed();
+}
+
+void ZoomTimeline::setKeyframeRects(const QVector<QPair<int, QRectF>> &updates)
+{
+    int lo = m_keyframes.size(), hi = -1;
+    for (const auto &u : updates) {
+        if (u.first < 0 || u.first >= m_keyframes.size())
+            continue;
+        m_keyframes[u.first].rect = u.second;
+        lo = std::min(lo, u.first);
+        hi = std::max(hi, u.first);
+    }
+    if (hi < 0)
+        return;
+    emit dataChanged(this->index(lo), this->index(hi), {RectRole});
     emit changed();
 }
 
@@ -187,7 +209,9 @@ void ZoomTimeline::setKeyframeEasing(int index, int easeInMs, int easeOutMs)
         return;
     m_keyframes[index].easeInMs = easeInMs;
     m_keyframes[index].easeOutMs = easeOutMs;
-    emit dataChanged(this->index(index), this->index(index), {EaseInRole, EaseOutRole});
+    m_keyframes[index].source = Manual; // see setKeyframeRect()
+    emit dataChanged(this->index(index), this->index(index),
+                     {EaseInRole, EaseOutRole, SourceRole});
     emit changed();
 }
 

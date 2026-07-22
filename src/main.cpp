@@ -74,23 +74,30 @@ static QString singleInstanceServerName()
 #endif
 }
 
-// Second launch: hand the running instance either a bare "raise" or, when a
-// project file was passed on the command line (double-click), "open <path>" so
-// the single live instance opens it. Returns true when a peer accepted.
-static bool notifyExistingInstance(const QString &serverName, const QString &openPath)
+// Send one line to the running instance over the single-instance socket.
+// Returns true when a peer accepted it.
+static bool sendToExistingInstance(const QString &serverName, const QByteArray &line)
 {
     QLocalSocket socket;
     socket.connectToServer(serverName, QIODevice::WriteOnly);
     if (!socket.waitForConnected(200))
         return false;
-    const QByteArray msg = openPath.isEmpty()
-                               ? QByteArray("raise\n")
-                               : ("open " + openPath.toUtf8() + "\n");
-    socket.write(msg);
+    socket.write(line);
     socket.flush();
     socket.waitForBytesWritten(500);
     socket.disconnectFromServer();
     return true;
+}
+
+// Second launch: hand the running instance either a bare "raise" or, when a
+// project file was passed on the command line (double-click), "open <path>" so
+// the single live instance opens it. Returns true when a peer accepted.
+static bool notifyExistingInstance(const QString &serverName, const QString &openPath)
+{
+    const QByteArray msg = openPath.isEmpty()
+                               ? QByteArray("raise\n")
+                               : ("open " + openPath.toUtf8() + "\n");
+    return sendToExistingInstance(serverName, msg);
 }
 
 int main(int argc, char *argv[])
@@ -148,6 +155,28 @@ int main(int argc, char *argv[])
     // environmental no-peer case falls through to a fresh instance.
     const QString serverName = singleInstanceServerName();
     auto *server = new QLocalServer(&app);
+    // `--stop` is a control ping, not a launch: forward "stop" to the running
+    // instance so it ends any live recording, then exit. Wayland has no reliable
+    // global key grab for an unfocused app (the portal GlobalShortcuts backend on
+    // KDE refuses without an installed-app app id), so the honest cross-desktop
+    // path is: the user binds `unisic-studio --stop` to a hotkey in their own
+    // desktop keyboard settings. Never boots a fresh instance — with nothing
+    // running there is nothing to stop.
+    if (arguments.contains(QStringLiteral("--stop"))) {
+        sendToExistingInstance(serverName, QByteArray("stop\n"));
+        return 0;
+    }
+    // Pause/resume and cancel companions to --stop, for the same reason: when the
+    // recording HUD is hidden during capture (no burn-in), these bound hotkeys are
+    // how the user drives the recording. Each is a control ping that never boots.
+    if (arguments.contains(QStringLiteral("--pause"))) {
+        sendToExistingInstance(serverName, QByteArray("pause\n"));
+        return 0;
+    }
+    if (arguments.contains(QStringLiteral("--cancel"))) {
+        sendToExistingInstance(serverName, QByteArray("cancel\n"));
+        return 0;
+    }
     if (!isolatedMotionTest) {
         if (notifyExistingInstance(serverName, fileToOpen))
             return 0;
@@ -235,6 +264,9 @@ int main(int argc, char *argv[])
     // window forward. Only a bare raise for now.
     QPointer<QQuickWindow> mainWin =
         qobject_cast<QQuickWindow *>(engine.rootObjects().value(0));
+    // Explicit lifetime rule (main hidden + no editors + not recording → quit);
+    // quitOnLastWindowClosed alone intermittently left a windowless process.
+    studio.setMainWindow(mainWin);
     if (server->isListening()) {
         QObject::connect(server, &QLocalServer::newConnection, &app, [server, mainWin, &studio] {
             while (QLocalSocket *socket = server->nextPendingConnection()) {
@@ -244,6 +276,19 @@ int main(int argc, char *argv[])
                 if (socket->waitForReadyRead(300))
                     buf = socket->readAll();
                 const QString text = QString::fromUtf8(buf).trimmed();
+                if (text == QLatin1String("stop") || text == QLatin1String("pause")
+                    || text == QLatin1String("cancel")) {
+                    // Control-only recording pings. `continue` (not else) so we skip
+                    // the raise below — a control hotkey must never yank Studio's
+                    // window over the user's screen mid-capture.
+                    if (text == QLatin1String("stop"))
+                        studio.stopRecording();
+                    else if (text == QLatin1String("pause"))
+                        studio.togglePauseRecording();
+                    else
+                        studio.cancelRecording();
+                    continue;
+                }
                 if (text.startsWith(QLatin1String("open "))) {
                     const QString path = text.mid(5).trimmed();
                     if (!path.isEmpty())

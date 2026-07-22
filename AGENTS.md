@@ -24,21 +24,38 @@ from the cursor and click tracks, style it, and export via ffmpeg. Stack:
 `unisic-kit` design system. GPLv3. Zero telemetry. It is a **sibling of Unisic**
 (the live screenshot/recording tool) and shares its foundation library.
 
-**It is NOT:** a live screen recorder (Unisic owns that), a general video editor,
-a cloud service, a cross-platform app, an X11 tool, or a kitchen-sink utility.
-Every feature request is measured against "does a screen-recording
-post-production workflow genuinely need this?"
+**It is NOT:** a live screen recorder for casual clips (Unisic owns that), a
+general video editor, a cloud service, a cross-platform app, an X11 tool, or a
+kitchen-sink utility. Studio *does* record — but only as the front door to
+post-production, through the kit's portal/PipeWire stack, never as a general
+capture utility. Every feature request is measured against "does a
+screen-recording post-production workflow genuinely need this?"
 
-**Current milestone: M0 (skeleton).** The app boots, a themed main window opens,
-and settings persistence is wired. There is no recording/editing/export logic
-yet. Do not add it speculatively — Studio-specific deep design lives in the
-maintainer's approved plan.
+**Current state: the pipeline is live end-to-end** — record (portal + PipeWire +
+libinput clicks) → project sidecar → auto-zoom → editor preview → export
+(MP4/WebM/GIF). ~15.8k lines across `src/` + `qml/`, 11 unit tests, all green.
+**README's "Status & roadmap" is the authoritative statement of what is done** (it
+calls this **v1**); in-code comments label the subsystem generations M1–M4. Don't
+re-derive a milestone here — read README and the code.
+
+**Known outstanding:** webcam **export** compositing (`src/render/RenderPipeline.cpp`
+~L222 — the schema, the recording capture and the editor *preview* all carry the
+webcam; export does not yet composite the second layer), and broader live-session
+testing across compositors and hardware.
+
+**`docs/NEXT-screen-studio-feel.md` is the LIVE SPEC** for the current motion and
+cursor-feel work (spring camera, cursor dynamics, tuning sliders) — read it before
+touching `src/engine/`. Note it is a *quality overhaul*, not a feature request:
+"no feature creep" (§2) still binds, and on a mature pipeline the bar for **new**
+surface is higher, not lower.
 
 ### Non-negotiable product constraints
 
-- **Wayland-first, legit paths only.** When capture/import lands it goes through
-  the kit's portal/PipeWire stack — no X11 hacks, no screen-scraping, no
-  compositor-specific bypasses of the security model.
+- **Wayland-first, legit paths only.** Capture goes through the kit's
+  portal/PipeWire stack — no X11 hacks, no screen-scraping, no
+  compositor-specific bypasses of the security model. `ClickCapture` opens
+  libinput devices with a **plain open, never `EVIOCGRAB`**: Studio observes
+  input, it never steals it.
 - **All UI colors flow from the kit's `Theme` tokens** (`qml/Theme.qml` in
   unisic-kit) — never hardcode a hex in a component. The mandatory palette
   (Primary `#17153B`, Secondary `#2E236C`, Tertiary `#433D8B`, Accent `#C8ACD6`)
@@ -54,8 +71,9 @@ Every change is judged against these, in order:
 1. **Lightweight.** Small binary, small dependency set, fast startup, low idle
    RAM/CPU.
 2. **Correct.** No regressions in the load-bearing subsystems — settings
-   persistence today; the project model, zoom/pan engine and export pipeline
-   later. When in doubt, verify on a real Wayland session (§7).
+   persistence, the recorder, the project sidecar, the zoom/motion engine and the
+   render/export path are **all live and all load-bearing now**. When in doubt,
+   verify on a real Wayland session (§9).
 3. **No leaks.** Qt makes ownership easy to get wrong. Every `new` needs an
    owner; every temp file, D-Bus handle, and ffmpeg/PipeWire resource needs a
    teardown path.
@@ -97,12 +115,23 @@ cmake --build build
 
 - **Toolchain:** CMake ≥ 3.21, a C++20 compiler, Ninja.
 - **Required:** `qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtsvg-devel`
-  (+ `Widgets DBus Concurrent QuickControls2` Qt modules).
-- **Optional, compile-time guarded:** `pipewire-devel` → the kit's
-  `PipeWireGrabber` capture path. The build succeeds without it (warning printed).
-- **Runtime helpers shelled out, not linked (later milestones):** `ffmpeg`
-  (export). Detect with `QStandardPaths::findExecutable`, degrade gracefully,
-  never crash if absent.
+  (Qt 6.5+, components `Core Gui Widgets Quick Qml QuickControls2 DBus Concurrent
+  OpenGL`).
+- **Optional, compile-time guarded** (the build succeeds without each, warning
+  printed):
+  - `pipewire-devel` → the kit's `PipeWireGrabber` capture path (`HAVE_PIPEWIRE`).
+  - `libinput` + `libudev` → click capture (`HAVE_LIBINPUT`). Without it
+    `ClickCapture` is inert by design: auto-zoom still works from cursor motion.
+  - `LayerShellQt` → the layer-shell recording HUD (`HAVE_LAYERSHELL`).
+  - Qt `LinguistTools` → translation build (`HAVE_TRANSLATIONS`).
+- **Runtime helpers shelled out, not linked — live today:** `ffmpeg` (record
+  encode, frame decode, export) and `ffprobe` (import probe). Located via
+  `QStandardPaths::findExecutable`; degrade gracefully, never crash if absent.
+- **QtMultimedia is a RUNTIME-only QML plugin**, not a link-time dep: the build
+  succeeds without it and the app gates on `Studio.capVideoPlayback`, falling back
+  to a `PosterExtractor` still frame. It **is** a hard dependency of the *packages*
+  (live preview + webcam).
+- **Tests:** `ctest --test-dir build` (11 tests; needs Qt6 `Test`).
 
 **Dependency policy (this is a lightweight app):**
 - **Do not add a new library** — Qt module, system `.so`, or bundled source —
@@ -117,33 +146,104 @@ cmake --build build
 
 ---
 
-## 5. Repository map (M0)
+## 5. Repository map
+
+Everything below **exists and ships.** The headers are densely commented and are
+the real documentation — skim the `.h` before you touch the `.cpp`.
 
 ```
 external/unisic-kit/   SUBMODULE. Shared foundation (Unisic.Kit QML module + C++
                        theme/config/capture). Never edit in-place.
 src/
-  main.cpp             Entry point: QApplication, dev/stable identity, kit
-                       ConfigPath naming, QQuickStyle=Basic, Breeze icon fallback,
+  main.cpp             Entry: QApplication, dev/stable identity, kit ConfigPath
+                       naming, QQuickStyle=Basic, Breeze icon fallback,
                        single-instance socket (UID-keyed, bare "raise"),
-                       IconImageProvider, translator install, engine load.
-  StudioApp.{h,cpp}    THE facade exposed to QML as context property `Studio`.
-                       Minimal (version/devBuild/settings/quit) — grows later.
+                       IconImageProvider, translator install, engine load,
+                       dev CLI flags (below).
+  StudioApp.{h,cpp}    THE facade exposed to QML as context property `Studio`:
+                       import, open/save, recording control, zoom regenerate/edit,
+                       pickers, recents, input permission. AT ITS SIZE LIMIT —
+                       new behaviour goes in a subsystem it wires up, not here.
   StudioSettings.{h,cpp}  Persisted settings as Q_PROPERTYs (kit U_SETTING macro),
-                       800 ms debounce-sync + aboutToQuit flush.
+                       800 ms debounce-sync + aboutToQuit flush. Bare top-level
+                       keys (see §6).
+  PreviewController.*  Editor playback head: smooths timeMs between coarse
+                       MediaPlayer updates; derives camera rect + cursor state
+                       from that ONE time, in C++ (QML never evaluates per frame).
+  CursorPlayback.*     Click ripples active at the current instant.
+  EditorWindowManager.*  Editor window lifecycle; per-window QQmlContext idiom.
+  HudManager.*         The always-on-top recording HUD (layer-shell when built).
+  RecentProjects.*     JSON recents index beside the settings .conf; prunes dead.
+  AutozoomSelfTest.*   Headless engine harness  -> --autozoom-test
+  MotionSelfTest.*     Headless motion harness  -> --motion-test
+  capture/             RECORDING.
+    StudioRecorder.*     Session orchestrator: portal ScreenCast (cursor METADATA
+                         mode) -> kit PipeWireGrabber -> fixed-FPS sampler ->
+                         ffmpeg rawvideo stdin -> master .mkv (H.264/CRF + FLAC)
+                         in XDG cache. Countdown, pause excision, cancel.
+    ClickCapture.*       libinput/udev pointer buttons on its own thread. PLAIN
+                         open, never EVIOCGRAB. Inert without HAVE_LIBINPUT.
+    InputPermission.*    On-demand probe; raw enum + command string (tr() at UI).
+    RecordingAssembler.* Raw capture -> StudioProject. Own TU for a hard reason
+                         (the CursorSample collision, §6).
+    RecorderMath.h       Pure sampling/timing math (unit-tested).
+  project/             THE .unisicstudio SIDECAR DOCUMENT.
+    StudioProject.*      schemaVersion 1, compact JSON, ATOMIC write; refuses a
+                         newer schema. Master video by relative + absolute path.
+                         Owns ZoomTimeline/StyleModel; dirty tracking.
+    ZoomTimeline.*       QAbstractListModel of keyframes, ALWAYS sorted by tMs.
+                         clearAuto() spares Manual + locked (never eat user work).
+    StyleModel.*         Background/padding/rounding/shadow/frame/aspect/cursor.
+    CursorTrack.* ClickTrack.*  Recorded input tracks.
+  engine/              MOTION. Pure logic: Core+Gui only, no QML/clocks/randomness;
+                       identical inputs -> byte-identical output (tests pin it).
+    KeyframeEngine.*     Cursor path + clicks -> ZoomTimeline of Auto keyframes.
+                         Also declares SpringCameraEvaluator: keyframes are
+                         TARGETS, a stateful spring chases them; evaluate(t) is a
+                         deterministic sim with a forward cache. ONE evaluator
+                         instance per preview/export stream (state must not leak).
+    CursorSmoother.*     One-euro filter over a CursorTrack; non-mutating.
+    TrajectoryMetrics.*  Smoothness/settling/bounds metrics the self-tests assert.
+    Easing.h             Header-only cubic-bezier, no Qt. Engine + renderer agree.
+  render/              EXPORT.
+    RenderPipeline.*     Renders THE SAME composition/CompositionRoot.qml as the
+                         live preview, offscreen, at export resolution.
+    ExportController.*   Thin QML façade -> RenderPipeline::Settings + progress.
+    FrameDecoder.*       ffmpeg -> raw BGRA frames on a worker thread, with a
+                         credit-semaphore backpressure (N=4) bounding memory.
+    VideoFrameItem.*     QQuickItem bridging CPU frames to a SG texture; parented
+                         into CompositionRoot's videoSlot (same slot as preview).
+    CursorShapeProvider.*  image://cursorshape/<projectId>/<shapeId>; process-wide,
+                         mutex-guarded, ref-counted per project.
+  media/
+    VideoProbe.*         Async ffprobe -> duration/fps/size (used by import).
+    PosterExtractor.*    One poster frame; ONLY on the degraded no-QtMultimedia
+                         path.
 qml/
-  StudioMain.qml       Themed window: sidebar + centered empty state.
-resources/             .desktop, AppStream metainfo, app icon (placeholder).
+  StudioMain.qml       Sidebar (Projects / Settings) + recents grid.
+  SettingsPage.qml  EditorWindow.qml  InspectorPanel.qml  Timeline.qml
+  ZoomRectEditor.qml  ExportDialog.qml  RecordingHud.qml  SmokeTestDialog.qml
+  composition/         CompositionRoot.qml (THE one composition — preview AND
+                       export), CursorOverlay.qml, PreviewVideo.qml.
+tests/                 11 unit tests -> ctest --test-dir build
+docs/                  NEXT-screen-studio-feel.md = LIVE SPEC for motion work.
+                       perf/ = audit reports.
+resources/             .desktop, AppStream metainfo, app icon.
 i18n/                  studio_en.ts (English source; structure ready for more).
+packaging/             Arch PKGBUILD, Fedora/openSUSE spec, cpack DEB.
 ```
 
-**Planned (do not scaffold ahead of need):** `src/project/` (project document
-model + persistence), `src/engine/` (zoom/pan generation from cursor/click
-tracks), `src/capture/` (import / recording bridge), `src/render/` (ffmpeg export
-pipeline).
+**Dev CLI flags — this is the headless verification surface, use it:**
+`--import <file>` (+ `--selftest`), `--autozoom-test`, `--motion-test`,
+`--export-test` (+ `--format` / `--aspect` / `--bg` / `--trim-in` / `--trim-out` /
+`--cancel-ms`), `--hud-test`, `--smoke-test`, `--page <projects|settings>`.
 
-The `src/` tree is meant to stay comprehensible in an afternoon. If a file
-balloons, extract a focused helper rather than piling onto `StudioApp`.
+The `src/` tree is meant to stay comprehensible in an afternoon — it is ~15.8k
+lines now, so that goal is load-bearing, not aspirational. If a file balloons,
+extract a focused helper rather than piling onto `StudioApp`.
+
+**New QML files must be added to `qt_add_qml_module`** in `CMakeLists.txt`, or
+they ship unscanned by lupdate (§8).
 
 ---
 
@@ -183,6 +283,32 @@ balloons, extract a focused helper rather than piling onto `StudioApp`.
   provider runs on the GUI thread and `QIcon::fromTheme`/`qApp->palette()` are not
   thread-safe.
 
+### Pipeline invariants (do not break these)
+
+- **ONE composition.** `qml/composition/CompositionRoot.qml` drives **both** the
+  live preview and the offscreen export — that is what makes export WYSIWYG *by
+  construction*. Never fork a second styling implementation for export. If preview
+  looks right and the exported file doesn't, the bug is in what got parented into
+  the slot, not in a missing export-side copy.
+- **ONE evaluator.** Preview and export both run `SpringCameraEvaluator`; do not
+  fork the motion code (`docs/NEXT-screen-studio-feel.md` restates this as a hard
+  constraint). One *instance* per stream, though — the spring is stateful, and
+  shared state across streams is a bug.
+- **`struct CursorSample` collides.** The kit's `PipeWireGrabber.h` and the
+  project's `CursorTrack.h` BOTH declare a **global** `struct CursorSample` with
+  different fields, so **no single `.cpp` can include both.** `StudioRecorder`
+  talks to the kit grabber; `RecordingAssembler` talks to the project model; they
+  exchange only the neutral `Raw*` structs. That is *why* the assembler is its own
+  translation unit — do not "simplify" it back into the recorder.
+- **The cursor is captured in Metadata mode**, so the pointer is **not** baked
+  into the pixels — the overlay draws it, in preview and export alike. A missing
+  cursor is an overlay/shape-registry bug, not a capture bug.
+- **Coordinate systems:** cursor samples are **stream pixels**; the engine
+  normalises to frame fractions `[0,1]`. Keyframe rects are the visible sub-rect
+  of the source frame, also `[0,1]` — `(0,0,1,1)` means "no zoom, whole frame".
+- **The auto camera must never eat manual work.** Regeneration goes through
+  `ZoomTimeline::clearAuto()`, which spares `Manual` and locked keyframes.
+
 ### Process / single-instance
 
 - **Single-instance socket is keyed on UID alone**, deliberately not on any
@@ -204,8 +330,16 @@ balloons, extract a focused helper rather than piling onto `StudioApp`.
   `deleteLater()`.** See the single-instance socket handling in `main.cpp`.
 - **Disconnect or scope lambdas that capture raw pointers.** Give the connection a
   context object (3-arg `connect`) so it auto-disconnects when that object dies.
-- **Temp files and child processes (ffmpeg, later) must be cleaned up on every
-  exit path**, including signals. Prefer `QTemporaryFile`/`QTemporaryDir` RAII.
+- **Temp files and child processes must be cleaned up on every exit path**,
+  including signals. Prefer `QTemporaryFile`/`QTemporaryDir` RAII. This is **live,
+  not hypothetical**: ffmpeg/ffprobe children (recorder, `FrameDecoder`,
+  `VideoProbe`, `PosterExtractor`), the master `.mkv` in the XDG cache, poster
+  temp dirs, the `ClickCapture` thread, and the portal/PipeWire session each need
+  a teardown path on stop **and** cancel **and** signal.
+- **Keep the per-window `QQmlContext` idiom** (`EditorWindowManager`,
+  `HudManager`): the context and the project's children are parented so one
+  `project->deleteLater()` / `window->deleteLater()` cascades the whole tree. That
+  shape is what keeps every close path leak-free — preserve it.
 - **When you add a subsystem, add its teardown in the same PR.** Construction and
   destruction are one change, not two.
 
@@ -217,7 +351,7 @@ when/where does it die?**
 ## 8. Internationalization (REQUIREMENT)
 
 Every user-facing string MUST be wrapped in `qsTr()` (QML) / `tr()` (C++). English
-is the source language and **the only language shipped at M0** — its `.ts` mirrors
+is the source language and **still the only language shipped** — its `.ts` mirrors
 the source text (translation == source). The build wiring (`qt_add_lupdate` /
 `qt_add_lrelease`, `HAVE_TRANSLATIONS`) is already structured to take more
 languages later: add `i18n/studio_<code>.ts` to `STUDIO_TS_FILES` in
@@ -242,13 +376,27 @@ observing behavior** — not "it compiles."
 1. **Build clean:** `cmake --build build` with no new warnings. (Warnings inside
    the `external/unisic-kit` submodule are pre-existing and out of scope — fix
    them upstream in the kit repo, not here.)
-2. **Smoke offscreen:** `QT_QPA_PLATFORM=offscreen ./build/unisic-studio` boots
+2. **Unit suite:** `ctest --test-dir build` — 11 tests, all green. The engine
+   tests pin determinism; if you touch `src/engine/`, running them is mandatory.
+3. **Smoke offscreen:** `QT_QPA_PLATFORM=offscreen ./build/unisic-studio` boots
    with no QML load errors (`qrc` / missing-module errors on stderr).
-3. **Exercise the actual flow on a real session:** the window opens themed, the
-   sidebar responds. Settings change → change it, fully quit, relaunch a **fresh
-   process**, confirm it persisted (fresh process — see §6).
-4. **Watch for leaks/stragglers:** no orphaned helper processes, no runaway idle
-   CPU, no growing RSS.
+   **⚠ Offscreen is NOT sufficient for render/export/HUD.** The `offscreen` QPA
+   plugin cannot initialize a real GL RHI on many Mesa/EGL stacks, so
+   `--export-test`, `--smoke-test` and `--hud-test` must run on a **live Wayland
+   session**. "It passed offscreen" is not evidence for the render path.
+4. **Exercise the actual flow on a real session**, matching what you touched:
+   - *settings* → change it, fully quit, relaunch a **fresh process**, confirm it
+     persisted (fresh process — see §6; the in-process cache lies).
+   - *engine/motion* → `--autozoom-test` / `--motion-test`, and **report the
+     numbers** (smoothness, settling, bounds). Then watch a real clip: the camera
+     must spring, hold without swimming, and ease out. Cheap-looking motion is a
+     bug here, not a nitpick — see `docs/NEXT-screen-studio-feel.md`.
+   - *render/export* → `--export-test` live, then **open the output file**: it
+     must match the preview (the WYSIWYG invariant in §6).
+   - *recording* → record a real clip on KWin Wayland; confirm cursor, clicks and
+     HUD, and that stop **and** cancel each leave no ffmpeg straggler.
+5. **Watch for leaks/stragglers:** no orphaned helper processes, no runaway idle
+   CPU, no growing RSS. `pgrep -x ffmpeg` after stop/cancel should be empty.
 
 Never report "done" for an untested runtime change. If you couldn't run it, state
 that plainly and describe what still needs verification.
@@ -279,8 +427,13 @@ that plainly and describe what still needs verification.
 - ❌ Add Kirigami / Breeze / KDE Frameworks / Boost / any heavy framework.
 - ❌ Hardcode colors, version strings, or config paths.
 - ❌ `new` a QObject with no owner, or `delete` one with pending events.
-- ❌ Add recording/editing/export logic before its milestone and the approved
-  plan.
+- ❌ Fork the composition or the motion evaluator so preview and export diverge.
+- ❌ Include both the kit's `PipeWireGrabber.h` and the project's `CursorTrack.h`
+  in one `.cpp` (the `CursorSample` collision — §6).
+- ❌ Discard the user's Manual/locked keyframes when regenerating the auto camera.
+- ❌ Claim the render/export path works because it passed under
+  `QT_QPA_PLATFORM=offscreen` (no real GL RHI there — §9).
+- ❌ Leave an ffmpeg child, portal session or temp file alive on a cancel path.
 - ❌ Report "done" on a runtime change you didn't actually run.
 
 ---

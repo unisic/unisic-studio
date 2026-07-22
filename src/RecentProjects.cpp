@@ -79,6 +79,26 @@ void RecentProjects::recordOpened(const QString &path, const QString &name, qint
     emit changed();
 }
 
+bool RecentProjects::remove(const QString &path)
+{
+    if (path.isEmpty())
+        return false;
+    const QString abs = QFileInfo(path).absoluteFilePath();
+
+    bool removed = false;
+    for (int i = m_list.size() - 1; i >= 0; --i) {
+        if (m_list.at(i).toMap().value(QStringLiteral("path")).toString() == abs) {
+            m_list.removeAt(i);
+            removed = true;
+        }
+    }
+    if (removed) {
+        persist();
+        emit changed();
+    }
+    return removed;
+}
+
 void RecentProjects::persist() const
 {
     QJsonArray arr;

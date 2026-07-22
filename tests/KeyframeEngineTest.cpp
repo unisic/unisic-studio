@@ -9,6 +9,7 @@
 #include <QVector>
 
 #include <cmath>
+#include <limits>
 
 using Keyframe = KeyframeEngine::Keyframe;
 
@@ -80,11 +81,19 @@ private slots:
     void twoNearClustersMerge();
     void idleTailReturnsToFull();
     void noClicksDwellFallback();
+    void typingBurstHoldsZoom();
+    void driveByClickDoesNotZoom();
+    void loneClickZoomsSofterThanCluster();
     void trivialMotionDoesNotZoom();
+    void invalidClicksFallBackToDwell();
+    void postDurationDwellDoesNotZoom();
+    void generatedTimesStayWithinDuration();
+    void nonPositiveDurationIsSafe();
     void intensityScalesZoomAndFrequency();
     void clickTargetKeepsActivityOffEdges();
     void pinnedRoutesAround();
     void nonMatchingAspectRects();
+    void aspectReprojectionRoundtrip();
     void fillModeBaseRectAspect();
     void evaluateContinuity();
     void springBoundsSettlingAndHold();
@@ -257,6 +266,169 @@ void KeyframeEngineTest::trivialMotionDoesNotZoom()
     QVERIFY(isFull(kfs.first().rect));
 }
 
+// A typing burst is dwell evidence: the camera must hold its zoom through the
+// burst instead of retracting right after the click that opened the field.
+void KeyframeEngineTest::typingBurstHoldsZoom()
+{
+    CursorTrack cur;
+    moveLine(cur, 200, 200, 960, 540, 0, 800);
+    hold(cur, 960, 540, 816, 12000);       // parked in the field being typed into
+    ClickTrack clk;
+    click(clk, 900, 960, 540);             // click into the field
+
+    KeyframeEngine::Params params;         // defaults
+    const qint64 dur = 13000;
+
+    const auto without =
+        KeyframeEngine::generate(cur, clk, kVideo, dur, "16:9", params, {}, {});
+    const auto withTyping =
+        KeyframeEngine::generate(cur, clk, kVideo, dur, "16:9", params, {}, {{2000, 9000}});
+
+    auto lastTime = [](const QVector<Keyframe> &kfs) {
+        qint64 mx = 0;
+        for (const auto &k : kfs)
+            mx = std::max(mx, k.tMs);
+        return mx;
+    };
+    QVERIFY(without.size() >= 2);
+    QVERIFY(withTyping.size() >= 2);
+    // The lone click zooms back out early; the burst keeps the camera engaged
+    // well past it (holding through the whole [2000,9000] typing run).
+    QVERIFY(lastTime(withTyping) > lastTime(without) + 2500);
+    checkInvariants(withTyping, dur, kOutAspect);
+}
+
+// A lone click while the cursor is traveling through (no dwell after it) is not
+// zoom-worthy — the drive-by filter must drop it rather than produce a random
+// zoom in the middle of a mouse move.
+void KeyframeEngineTest::driveByClickDoesNotZoom()
+{
+    CursorTrack cur;
+    // Fast zig-zag travel (each leg ~a full frame crossing in <1s) — never
+    // settles anywhere, so neither click clusters nor dwell runs form.
+    moveLine(cur, 100, 150, 1820, 930, 0, 900);
+    moveLine(cur, 1820, 930, 120, 880, 916, 1800);
+    moveLine(cur, 120, 880, 1800, 160, 1816, 2700);
+    moveLine(cur, 1800, 160, 150, 900, 2716, 3600);
+    moveLine(cur, 150, 900, 1820, 500, 3616, 4500);
+    moveLine(cur, 1820, 500, 130, 300, 4516, 5400);
+    moveLine(cur, 130, 300, 1750, 950, 5416, 6400);
+    ClickTrack clk;
+    click(clk, 3100, 960, 540);       // one click mid-travel, cursor keeps going
+
+    const auto kfs = KeyframeEngine::generate(cur, clk, kVideo, 6400, "16:9", {});
+    checkInvariants(kfs, 6400, kOutAspect);
+    for (const auto &k : kfs)
+        QVERIFY2(isFull(k.rect), "drive-by click must not produce a zoom");
+}
+
+// A lone click the user stays on zooms WIDER than a dense multi-click cluster at
+// the same spot — repetition earns the tight framing.
+void KeyframeEngineTest::loneClickZoomsSofterThanCluster()
+{
+    auto minWidth = [](const QVector<Keyframe> &kfs) {
+        double w = 1.0;
+        for (const auto &k : kfs)
+            w = std::min(w, k.rect.width());
+        return w;
+    };
+
+    CursorTrack cur;
+    moveLine(cur, 200, 200, 960, 540, 0, 1800);
+    hold(cur, 960, 540, 1816, 6400);
+
+    ClickTrack lone;
+    click(lone, 2000, 960, 540);
+    ClickTrack cluster;
+    click(cluster, 2000, 950, 535);
+    click(cluster, 2350, 965, 545);
+    click(cluster, 2700, 955, 540);
+
+    const auto kfsLone = KeyframeEngine::generate(cur, lone, kVideo, 6400, "16:9", {});
+    const auto kfsCluster = KeyframeEngine::generate(cur, cluster, kVideo, 6400, "16:9", {});
+    const double wLone = minWidth(kfsLone);
+    const double wCluster = minWidth(kfsCluster);
+    QVERIFY2(wLone < 1.0, "lone dwelled click must still zoom");
+    QVERIFY2(wCluster < 1.0, "cluster must zoom");
+    // Softening: the lone click's tightest rect is wider than the cluster's.
+    QVERIFY2(wLone > wCluster + 0.02,
+             qPrintable(QStringLiteral("lone %1 vs cluster %2").arg(wLone).arg(wCluster)));
+}
+
+void KeyframeEngineTest::invalidClicksFallBackToDwell()
+{
+    CursorTrack cur;
+    moveLine(cur, 200, 200, 960, 540, 0, 1800);
+    hold(cur, 960, 540, 1816, 4300);
+    moveLine(cur, 960, 540, 1500, 800, 4316, 6500);
+    ClickTrack clicks;
+    click(clicks, -100, 960, 540);  // valid point, but before project start
+    click(clicks, 2500, -100, -100); // global click outside captured stream
+    click(clicks, 5000, std::numeric_limits<double>::quiet_NaN(), 540);
+    click(clicks, 7000, 960, 540);   // valid point, but beyond project duration
+
+    const qint64 duration = 6500;
+    const auto kfs = KeyframeEngine::generate(cur, clicks, kVideo, duration, "16:9", {});
+    const auto dwellOnly = KeyframeEngine::generate(
+        cur, ClickTrack{}, kVideo, duration, "16:9", {});
+    checkInvariants(kfs, duration, kOutAspect);
+    QCOMPARE(kfs.size(), dwellOnly.size());
+    bool zoomed = false;
+    for (int i = 0; i < kfs.size(); ++i) {
+        const Keyframe &keyframe = kfs.at(i);
+        zoomed = zoomed || !isFull(keyframe.rect);
+        QCOMPARE(keyframe.tMs, dwellOnly.at(i).tMs);
+        QCOMPARE(keyframe.rect, dwellOnly.at(i).rect);
+    }
+    QVERIFY(zoomed); // invalid click cannot suppress valid dwell evidence
+}
+
+void KeyframeEngineTest::generatedTimesStayWithinDuration()
+{
+    CursorTrack cur;
+    hold(cur, 960, 540, 0, 300);
+    ClickTrack clicks;
+    click(clicks, 100, 960, 540); // zoom-in and zoom-out both clamp to final instant
+    const qint64 duration = 300;
+    const auto kfs = KeyframeEngine::generate(cur, clicks, kVideo, duration, "16:9", {});
+    QCOMPARE(kfs.size(), 2);
+    for (int i = 0; i < kfs.size(); ++i) {
+        QVERIFY(kfs.at(i).tMs >= 0);
+        QVERIFY(kfs.at(i).tMs <= duration);
+        if (i > 0)
+            QVERIFY(kfs.at(i).tMs > kfs.at(i - 1).tMs);
+    }
+    QCOMPARE(kfs.last().tMs, duration);
+    QVERIFY(isFull(kfs.last().rect)); // final zoom-out replaces colliding zoom target
+}
+
+void KeyframeEngineTest::postDurationDwellDoesNotZoom()
+{
+    CursorTrack cur;
+    moveLine(cur, 200, 200, 960, 540, 0, 1000);
+    hold(cur, 960, 540, 1016, 4000);
+
+    // Only ~500 ms of the hold is inside the clip. Samples after duration must
+    // not satisfy the ~1.3 s dwell threshold.
+    const auto kfs = KeyframeEngine::generate(
+        cur, ClickTrack{}, kVideo, 1500, "16:9", {});
+    QCOMPARE(kfs.size(), 1);
+    QVERIFY(isFull(kfs.first().rect));
+}
+
+void KeyframeEngineTest::nonPositiveDurationIsSafe()
+{
+    CursorTrack cur;
+    hold(cur, 960, 540, 0, 1000);
+    for (const qint64 duration : {qint64(0), qint64(-1)}) {
+        const auto kfs = KeyframeEngine::generate(
+            cur, ClickTrack{}, kVideo, duration, "16:9", {});
+        QCOMPARE(kfs.size(), 1);
+        QCOMPARE(kfs.first().tMs, qint64(0));
+        QVERIFY(isFull(kfs.first().rect));
+    }
+}
+
 void KeyframeEngineTest::intensityScalesZoomAndFrequency()
 {
     CursorTrack cur;
@@ -335,6 +507,35 @@ void KeyframeEngineTest::pinnedRoutesAround()
         QVERIFY(k.tMs <= 6700 || k.tMs >= 7300);
 
     QVERIFY(!isFull(evaluate(kfs, 3000)));                          // cluster still covered
+}
+
+// Aspect re-projection contract (drives the Manual-keyframe re-frame on aspect
+// change): recover (center, zoom) from a rect under its ORIGINAL aspect, re-frame
+// under the new one. Zoom must survive the round trip and the new rect must carry
+// the NEW output aspect in pixels.
+void KeyframeEngineTest::aspectReprojectionRoundtrip()
+{
+    const QPointF center(0.62, 0.44);
+    const double zoom = 2.0;
+
+    const QRectF r169 = KeyframeEngine::cameraRect(kVideo, "16:9", center, zoom);
+    QCOMPARE(KeyframeEngine::zoomOfRect(kVideo, "16:9", r169), zoom);
+
+    const double z = KeyframeEngine::zoomOfRect(kVideo, "16:9", r169);
+    const QRectF r916 = KeyframeEngine::cameraRect(kVideo, "9:16", r169.center(), z);
+
+    // Same zoom level under the new aspect…
+    QCOMPARE(KeyframeEngine::zoomOfRect(kVideo, "9:16", r916), zoom);
+    // …and the rect is genuinely output-shaped: pixel aspect == 9/16.
+    const double pixAspect = (r916.width() * kW) / (r916.height() * kH);
+    QVERIFY(std::fabs(pixAspect - 9.0 / 16.0) < 1e-9);
+    // Center preserved up to the in-bounds clamp.
+    QVERIFY(std::fabs(r916.center().x() - center.x()) < 0.25);
+    QVERIFY(std::fabs(r916.center().y() - center.y()) < 0.25);
+    // And a rect that was NOT re-projected renders distorted by construction —
+    // the 16:9 rect's pixel aspect is not 9/16 (this is the bug being fixed).
+    const double stale = (r169.width() * kW) / (r169.height() * kH);
+    QVERIFY(std::fabs(stale - 9.0 / 16.0) > 0.5);
 }
 
 void KeyframeEngineTest::nonMatchingAspectRects()
@@ -510,7 +711,7 @@ void KeyframeEngineTest::springBoundsSettlingAndHold()
     // 5 ms substeps are much tighter than a display frame; this guards any
     // accidental target snap or unstable integration.
     QVERIFY(maxFrameJump < 0.012);
-    QVERIFY(rectError(evaluator.evaluate(4200), QRectF(0, 0, 1, 1)) < 1e-8);
+    QVERIFY(rectError(evaluator.evaluate(4200), QRectF(0, 0, 1, 1)) < 1e-5);
 }
 
 void KeyframeEngineTest::springDeterministicAcrossSeekOrder()

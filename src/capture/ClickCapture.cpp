@@ -107,6 +107,17 @@ void ClickCapture::run()
                 }
                 if (qtButton != 0)
                     emit buttonEvent(qint64(tUsec), qtButton, pressed);
+            } else if (libinput_event_get_type(ev) == LIBINPUT_EVENT_KEYBOARD_KEY
+                       && m_captureKeys.load()) {
+                // TIMING ONLY. We read the key STATE (to fire once per press) and
+                // the timestamp — never libinput_event_keyboard_get_key(), so the
+                // keycode never enters the process. No key content is knowable
+                // from what we emit.
+                libinput_event_keyboard *kev = libinput_event_get_keyboard_event(ev);
+                if (libinput_event_keyboard_get_key_state(kev)
+                    == LIBINPUT_KEY_STATE_PRESSED) {
+                    emit keyActivity(qint64(libinput_event_keyboard_get_time_usec(kev)));
+                }
             }
             libinput_event_destroy(ev);   // everything else: dispatched and dropped
         }

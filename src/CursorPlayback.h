@@ -45,8 +45,10 @@ private:
 // Drives the cursor overlay: given a video-ms time, exposes the pointer's
 // normalised position / visibility / current shape bitmap and the active click
 // ripples. The rendered position follows the one-euro-smoothed recording through
-// its own soft spring. Fixed 5 ms simulation + 500 ms checkpoints make seeking,
-// looping, preview and export deterministic. Pure playback state — it holds
+// its own soft spring, with the trailing distance hard-capped so a fast flick
+// tows the pointer instead of leaving it half a screen behind. Fixed 5 ms
+// simulation + 500 ms checkpoints make seeking, looping, preview and export
+// deterministic. Pure playback state — it holds
 // COPIES of the tracks and never mutates project metadata.
 //
 // Shape bitmaps are served through image://cursorshape/<projectId>/<shapeId>;

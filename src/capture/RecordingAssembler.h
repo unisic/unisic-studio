@@ -45,6 +45,10 @@ struct Input {
     QVector<RawCursor> cursors;
     QVector<RawClick> clicks;
     QVector<RawShape> shapes;
+    // Key-DOWN timestamps only (CLOCK_MONOTONIC ns) — no keycodes are ever
+    // captured. Coalesced into [startMs,endMs] typing bursts, pauses excised,
+    // before anything is written. Empty unless the user opted into typing capture.
+    QVector<qint64> keyDownMonoNs;
     QList<QPair<qint64, qint64>> pauseMonoNs;   // completed [startMonoNs,endMonoNs)
 
     qint64 t0MonoNs = 0;       // pts of the first sampled frame == video-time origin
@@ -71,5 +75,14 @@ struct Input {
 // (CursorTrack::sample clamps to the first/last sample outside the recorded span),
 // then both tracks are excised together so a click keeps agreeing with the cursor.
 bool assembleAndSave(const Input &in, QString *error);
+
+// Coalesce sorted key-down times (video-ms) into [start,end] typing bursts: keys
+// closer than mergeGapMs join one burst, each burst's end is padded by tailPadMs
+// so the zoom lingers past the last stroke, and a burst is dropped unless it holds
+// at least minKeysPerBurst strokes (so a stray keypress never triggers a zoom).
+// Pure function — unit-tested directly. PRIVACY: input is timestamps only.
+QList<QPair<qint64, qint64>> coalesceTypingBursts(const QVector<qint64> &downMs,
+                                                  qint64 mergeGapMs, qint64 tailPadMs,
+                                                  int minKeysPerBurst);
 
 } // namespace RecordingAssembler

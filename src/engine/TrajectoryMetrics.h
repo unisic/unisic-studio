@@ -26,6 +26,8 @@ struct TrajectoryMetrics {
     double maxCenterOvershootRatio = 0.0;
     double maxZoomOvershootRatio = 0.0;
     qint64 maxSettlingMs = 0;
+    int settledSegments = 0;
+    int unsettledSegments = 0;
     double holdDrift = 0.0;
     double holdRmsVelocity = 0.0;
 };

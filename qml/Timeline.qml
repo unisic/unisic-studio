@@ -158,6 +158,23 @@ Rectangle {
             onPositionChanged: (m) => { if (pressed) timeline.seek(Math.round(timeline.msForX(m.x))) }
         }
 
+        // Typing bursts: thin bars along the rail's bottom edge, so it's visible
+        // WHERE keyboard activity was captured (and that it was captured at all —
+        // timing only, no key content exists in the project).
+        Repeater {
+            model: timeline.project ? timeline.project.typingBurstRanges() : []
+            delegate: Rectangle {
+                required property var modelData
+                x: timeline.xForMs(modelData.startMs)
+                width: Math.max(3, timeline.xForMs(modelData.endMs) - x)
+                height: 3
+                radius: 1.5
+                y: rail.y + rail.height - 3
+                color: Theme.accent
+                opacity: 0.45
+            }
+        }
+
         // Click markers.
         Repeater {
             model: timeline.project ? timeline.project.clickDownTimesMs() : []
@@ -201,11 +218,17 @@ Rectangle {
                     width: 12
                     height: 26
                     radius: Theme.radiusS
-                    // Auto = tertiary tint, Manual = secondary; selected = accent ring.
-                    color: source === 1 ? Theme.secondary : Theme.tertiary
+                    // Auto keyframes are editable SUGGESTIONS — hollow pill
+                    // (tertiary-tint border, translucent fill) so they read as
+                    // offered, not owned. Manual = solid secondary (user work).
+                    // Selected keeps the accent ring either way; size and hit
+                    // target are identical for both kinds.
+                    readonly property bool isAuto: block.source !== 1
+                    color: isAuto ? Qt.alpha(Theme.tertiary, 0.30) : Theme.secondary
                     border.width: block.isSel ? 2 : (blockHov.containsMouse ? 2 : 1)
                     border.color: block.isSel ? Theme.accent
-                                : (blockHov.containsMouse ? Theme.accent : Theme.divider)
+                                : (blockHov.containsMouse ? Theme.accent
+                                : (isAuto ? Theme.tertiary : Theme.divider))
                     scale: (blockHov.containsMouse || block.isSel) ? 1.12 : 1.0
                     Behavior on scale { NumberAnimation { duration: Theme.animFast } }
 

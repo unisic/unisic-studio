@@ -100,7 +100,11 @@ private:
 
     State m_state = Idle;
     QString m_format = QStringLiteral("mp4");
-    QString m_resolution = QStringLiteral("source");
+    // Defaults MUST match one of ExportDialog's quality presets, or every chip
+    // renders unchecked on open and the row reads as "nothing selected".
+    // (1080p, 70) is "Balanced". 1080p caps rather than upscales, so a smaller
+    // source still exports at its native height.
+    QString m_resolution = QStringLiteral("1080p");
     int m_customWidth = 1920;
     int m_customHeight = 1080;
     QString m_fpsMode = QStringLiteral("source");

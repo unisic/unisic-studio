@@ -6,4 +6,6 @@
 - to samo co w 4, jeżeli coś tak działą średnio to jest gorzej.
 - To dobrze działa, ale by się przydało więcej pre-setów
 - export przynajmniej na gif nie działa dobrze (w ogóle nie mam gif'a na dysku z eksportu), oraz UX tego okna dialogowego exportu jest dziwne i nieintuicyjne
--
+- nie mogę znaleźć w ogóle gdzie są style myszki i tak dalej.
+
+Napraw najpierw to później znajdę więcej, bo aktualnie jest lepiej niż sądziłem z nagrywaniem. Ale UI/UX jest chujowe

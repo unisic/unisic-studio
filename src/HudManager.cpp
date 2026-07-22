@@ -44,9 +44,20 @@ void HudManager::syncToRecorderState()
         return;
     }
     // Arming = the portal picker dialog is up; the HUD only appears once capture
-    // is imminent (countdown) or live. Every other non-idle state shows it.
+    // is imminent (countdown) or live.
     if (s == StudioApp::RecArming)
         return;
+
+    // A monitor screencast bakes any overlay surface into the captured pixels —
+    // the portal cannot exclude it. So when hudHideWhileRecording is on, the HUD
+    // is shown only for the (excised) countdown and the brief finalize; during the
+    // LIVE capture it is destroyed so nothing burns in. Stop/pause/cancel while
+    // hidden come from bound hotkeys running `unisic-studio --stop/--pause/--cancel`.
+    const bool live = (s == StudioApp::RecRecording || s == StudioApp::RecPaused);
+    if (live && m_app->settings() && m_app->settings()->hudHideWhileRecording()) {
+        closeHud();
+        return;
+    }
     showHud();
 }
 
@@ -101,17 +112,31 @@ void HudManager::configureLayerShell(QQuickWindow *win)
         fflush(stderr);
         return; // GNOME/Mutter etc. — plain toplevel fallback (can't self-position)
     }
-    fprintf(stderr, "HudManager: HUD path = layer-shell overlay bottom-centre (platform=%s)\n",
-            qPrintable(QGuiApplication::platformName()));
-    fflush(stderr);
     if (auto *ls = LayerShellQt::Window::get(win)) {
         using LW = LayerShellQt::Window;
+        // Map the user's placement preference to an anchor set + edge margins.
+        const QString place = (m_app && m_app->settings())
+                                  ? m_app->settings()->hudPlacement()
+                                  : QStringLiteral("bottomCenter");
+        const bool top   = place.startsWith(QLatin1String("top"));
+        const bool left  = place.endsWith(QLatin1String("Left"));
+        const bool right = place.endsWith(QLatin1String("Right"));
+        LW::Anchors anchors = top ? LW::AnchorTop : LW::AnchorBottom;
+        if (left)  anchors |= LW::AnchorLeft;
+        if (right) anchors |= LW::AnchorRight;
+        // 16px from the anchored edge; a wider inset on a chosen side so a corner
+        // pill does not hug the screen edge.
+        const int side = (left || right) ? 24 : 0;
         ls->setScope(QStringLiteral("unisic-studio-hud"));
         ls->setLayer(LW::LayerOverlay);          // above every window (incl. fullscreen)
-        ls->setAnchors(LW::AnchorBottom);        // bottom edge, horizontally centred
-        ls->setMargins(QMargins(0, 0, 0, 16));   // small gap from the screen edge
+        ls->setAnchors(anchors);
+        ls->setMargins(QMargins(left ? side : 0, top ? 16 : 0,
+                                right ? side : 0, top ? 0 : 16));
         ls->setExclusiveZone(0);                 // reserve no space / push nothing
         ls->setKeyboardInteractivity(LW::KeyboardInteractivityNone); // never steal focus
+        fprintf(stderr, "HudManager: HUD path = layer-shell overlay (%s, platform=%s)\n",
+                qPrintable(place), qPrintable(QGuiApplication::platformName()));
+        fflush(stderr);
     }
 #else
     Q_UNUSED(win);

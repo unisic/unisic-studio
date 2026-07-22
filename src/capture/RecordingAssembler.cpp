@@ -10,7 +10,68 @@
 #include <QFileInfo>
 #include <QHash>
 
+#include <algorithm>
+
 namespace RecordingAssembler {
+
+QList<QPair<qint64, qint64>> coalesceTypingBursts(const QVector<qint64> &downMs,
+                                                  qint64 mergeGapMs, qint64 tailPadMs,
+                                                  int minKeysPerBurst)
+{
+    QList<QPair<qint64, qint64>> out;
+    if (downMs.isEmpty())
+        return out;
+    QVector<qint64> t = downMs;
+    std::sort(t.begin(), t.end());
+
+    qint64 start = t.first();
+    qint64 last = t.first();
+    int keys = 1;
+    auto flush = [&] {
+        if (keys >= minKeysPerBurst)
+            out.append({start, last + tailPadMs});
+    };
+    for (int i = 1; i < t.size(); ++i) {
+        if (t.at(i) - last <= mergeGapMs) {
+            last = t.at(i);
+            ++keys;
+        } else {
+            flush();
+            start = t.at(i);
+            last = t.at(i);
+            keys = 1;
+        }
+    }
+    flush();
+    return out;
+}
+
+namespace {
+// Excise pause ranges from a set of point times: a time inside any [s,e) is
+// dropped, and every later time shifts left by the total excised length before
+// it. Mirrors CursorTrack/ClickTrack::excise so typing stays in sync with them.
+QVector<qint64> exciseTimes(const QVector<qint64> &times,
+                            const QList<QPair<qint64, qint64>> &ranges)
+{
+    if (ranges.isEmpty())
+        return times;
+    QList<QPair<qint64, qint64>> norm = ranges;
+    std::sort(norm.begin(), norm.end());
+    QVector<qint64> out;
+    out.reserve(times.size());
+    for (qint64 t : times) {
+        qint64 shift = 0;
+        bool dropped = false;
+        for (const auto &r : norm) {
+            if (t >= r.first && t < r.second) { dropped = true; break; }
+            if (t >= r.second) shift += r.second - r.first;
+        }
+        if (!dropped)
+            out.append(qMax<qint64>(0, t - shift));
+    }
+    return out;
+}
+} // namespace
 
 bool assembleAndSave(const Input &in, QString *error)
 {
@@ -66,6 +127,21 @@ bool assembleAndSave(const Input &in, QString *error)
         clicks.append(e);
     }
 
+    // --- typing bursts --------------------------------------------------------
+    // Key-down times → video-ms, excise pauses (in sync with cursor/clicks), then
+    // coalesce into [start,end] bursts. Timing only; no key content exists here.
+    QList<QPair<qint64, qint64>> typingBursts;
+    if (!in.keyDownMonoNs.isEmpty()) {
+        QVector<qint64> downMs;
+        downMs.reserve(in.keyDownMonoNs.size());
+        for (qint64 ns : in.keyDownMonoNs)
+            downMs.append(qMax<qint64>(0, RecorderMath::monoNsToVideoMs(ns, in.t0MonoNs)));
+        downMs = exciseTimes(downMs, videoMsRanges);
+        // ~1.5s gap splits bursts; hold ~0.6s past the last stroke; ignore < 3
+        // strokes so a stray keypress can't yank the camera.
+        typingBursts = coalesceTypingBursts(downMs, 1500, 600, 3);
+    }
+
     // Same ranges cut from both tracks (and the master) → gapless, still in sync.
     cursor.excise(videoMsRanges);
     clicks.excise(videoMsRanges);
@@ -97,6 +173,7 @@ bool assembleAndSave(const Input &in, QString *error)
     }
     project.setCursorTrack(cursor);
     project.setClickTrack(clicks);
+    project.setTypingBursts(typingBursts);
 
     QString saveErr;
     if (!project.save(in.sidecarPath, &saveErr)) {

@@ -217,7 +217,15 @@ void SpringCameraEvaluator::integrate(State *state, double dt) const
     state->center += state->centerVelocity * dt;
 
     const double zoomOmega = std::sqrt(m_parameters.zoomStiffness);
-    const double zoomDamping = 2.0 * m_parameters.zoomDampingRatio * zoomOmega;
+    // Zoom-in keeps the restrained near-critical overshoot. Returning to a base
+    // edge uses critical damping so it decelerates into frame bounds instead of
+    // colliding with the clamp at full size.
+    const bool returningToFrameEdge = state->target.width() >= 1.0 - 1.0e-9
+                                      || state->target.height() >= 1.0 - 1.0e-9;
+    const double zoomDampingRatio = returningToFrameEdge
+                                        ? std::max(1.0, m_parameters.zoomDampingRatio)
+                                        : m_parameters.zoomDampingRatio;
+    const double zoomDamping = 2.0 * zoomDampingRatio * zoomOmega;
     QPointF zoomAcceleration(
         m_parameters.zoomStiffness * (targetLog.x() - state->logSize.x())
             - zoomDamping * state->logSizeVelocity.x(),
@@ -355,6 +363,17 @@ using Keyframe = KeyframeEngine::Keyframe;
 using Params = KeyframeEngine::Params;
 
 constexpr int kCameraTickMs = 100;          // dead-zone re-evaluation cadence (10 Hz)
+// Drive-by suppression: a LONE click is only zoom-worthy if the cursor actually
+// stays around afterwards. If it has moved more than kDriveByDistFrac of the
+// frame within kPostClickDwellMs of the click, the user was passing through
+// (dismissing a popup mid-travel, etc.) and a zoom there reads as random.
+// Multi-click clusters are always kept — repetition IS the evidence.
+constexpr int kPostClickDwellMs = 650;
+constexpr double kDriveByDistFrac = 0.16;
+// A single click framed at the tightest allowed zoom looks jumpy; soften the
+// depth toward 1.0 so lone interactions get a comfortable, wider framing while
+// dense clusters keep the full fit-the-bbox zoom.
+constexpr double kSingleClickZoomSoften = 0.72;
 constexpr int kPanEaseMs = 450;             // spring-target lead for a deliberate pan
 
 // Smoothed cursor in normalised [0,1] frame coords + per-sample speed in
@@ -443,7 +462,8 @@ Cam buildCam(const CursorTrack &cursor, double W, double H)
 // Cluster Down events: a click joins the open cluster when it is within
 // clickClusterGapMs of the previous click AND within clickClusterDistFrac of
 // the frame width from it. Otherwise it opens a new cluster.
-QVector<Segment> clusterClicks(const ClickTrack &clicks, const Params &p, double W, double H)
+QVector<Segment> clusterClicks(const ClickTrack &clicks, const Params &p, double W, double H,
+                               qint64 durationMs)
 {
     QVector<Segment> segs;
     Segment cur;
@@ -456,7 +476,8 @@ QVector<Segment> clusterClicks(const ClickTrack &clicks, const Params &p, double
     for (const ClickEvent &e : clicks.events()) {
         if (e.state != ClickEvent::Down)
             continue;
-        if (e.x < 0.0 || e.y < 0.0 || e.x > W || e.y > H)
+        if (e.tMs < 0 || e.tMs >= durationMs || !std::isfinite(e.x) || !std::isfinite(e.y)
+            || e.x < 0.0 || e.y < 0.0 || e.x > W || e.y > H)
             continue; // global libinput click outside the captured stream
         const QPointF point(e.x / W, e.y / H);
         const bool joins = open
@@ -500,16 +521,20 @@ QVector<Segment> dwellSegments(const Cam &cam, const Params &p, qint64 durationM
     const double thresh = p.dwellSpeedFracPerSec;
     int i = 1;
     while (i < cam.t.size()) {
+        if (cam.t.at(i) > durationMs)
+            break;
         if (cam.spd.at(i) >= thresh) { ++i; continue; }
         const int runStart = i - 1;         // include the sample the slow run departs from
         double sx = cam.x.at(runStart), sy = cam.y.at(runStart);
         int cnt = 1;
-        while (i < cam.t.size() && cam.spd.at(i) < thresh) {
+        while (i < cam.t.size() && cam.t.at(i) <= durationMs && cam.spd.at(i) < thresh) {
             sx += cam.x.at(i); sy += cam.y.at(i); ++cnt;
             ++i;
         }
         const qint64 t0 = cam.t.at(runStart);
-        const qint64 t1 = cam.t.at(std::min(i, int(cam.t.size()) - 1));
+        if (t0 >= durationMs)
+            continue;
+        const qint64 t1 = std::min(cam.t.at(std::min(i, int(cam.t.size()) - 1)), durationMs);
         const int effectiveDwellMs =
             int(std::lround(p.dwellMinMs * (1.75 - 0.75 * p.zoomIntensity)));
         if (t1 - t0 < effectiveDwellMs)
@@ -520,7 +545,7 @@ QVector<Segment> dwellSegments(const Cam &cam, const Params &p, qint64 durationM
         const int before = std::max(1, runStart - 32);
         const int after = std::min(int(cam.spd.size()) - 1, i + 32);
         for (int j = before; j <= after; ++j) {
-            if ((j < runStart || j >= i)
+            if (cam.t.at(j) <= durationMs && (j < runStart || j >= i)
                 && cam.spd.at(j) >= p.dwellSpeedFracPerSec * 1.5) {
                 activityEvidence = true;
                 break;
@@ -687,9 +712,86 @@ double intensityZoom(double zoom, const Params &p)
     return std::clamp(1.0 + (zoom - 1.0) * strength, 1.0, 2.55);
 }
 
-// Emit the keyframes for one span into `out`. Returns nothing; the dead-zone
-// camera runs at 10 Hz and only lays down a pan keyframe when the center has
-// actually moved > 1% of the frame (coalesced, so the count stays low).
+// ---- shared dead-zone pan emitter ------------------------------------------
+// The follow-pan targets used to be distance-gated at ~0.045 of the frame, so the
+// spring reached each sparse target, settled, then lurched to the next — a visible
+// staircase ("poszarpane"). Two changes fix it without forking the spring: (1) the
+// per-tick dead-zone centres are low-passed so the path has no step kinks, and (2)
+// targets are emitted at a fine spatial floor OR a time floor shorter than the
+// spring's settle time, so the camera is always mid-flight during a pan and glides.
+// A pure hold never crosses kPanHoldEps, so a stationary cursor still emits zero
+// pan keyframes (keeps the timeline — and the exact-count engine tests — clean).
+constexpr double kPanEmitFrac     = 0.018;  // spatial floor between pan targets
+constexpr int    kPanMaxGapMs     = 180;    // time floor while panning (< spring settle)
+constexpr double kPanHoldEps      = 0.0022; // per-emit move below this == a hold: skip
+constexpr int    kPanSmoothPasses = 3;      // [1,2,1]/4 low-pass passes over the centres
+
+// Runs the dead-zone follower over [firstTick, spanEnd) from `seed` and appends a
+// smooth sequence of Auto pan keyframes. `zoomOutLead` is the easeOut lead carried
+// on each keyframe (so a later merge/zoom-out reads a consistent tail).
+void emitDeadZonePan(QPointF seed, double z, const Cam &cam, const Geometry &g,
+                     const Params &p, qint64 firstTick, qint64 spanEnd,
+                     int zoomOutLead, qint64 durationMs, QVector<Keyframe> &out)
+{
+    QVector<qint64> times;
+    QVector<QPointF> centers;
+    QPointF center = seed;
+    for (qint64 t = firstTick; t < spanEnd; t += kCameraTickMs) {
+        const QRectF view = g.rectAt(center, z);
+        const double hx = p.deadZoneFrac * view.width() / 2.0;
+        const double hy = p.deadZoneFrac * view.height() / 2.0;
+        const QPointF c = cam.sample(t);
+        const double dx = c.x() - center.x();
+        const double dy = c.y() - center.y();
+        // Pan only enough to pull the cursor back onto the dead-zone edge.
+        if (dx > hx)       center.setX(center.x() + (dx - hx));
+        else if (dx < -hx) center.setX(center.x() + (dx + hx));
+        if (dy > hy)       center.setY(center.y() + (dy - hy));
+        else if (dy < -hy) center.setY(center.y() + (dy + hy));
+        center = g.rectAt(center, z).center();
+        times.append(t);
+        centers.append(center);
+    }
+    if (centers.isEmpty())
+        return;
+
+    // Low-pass the collected centres (symmetric [1,2,1]/4). Endpoints are held, so
+    // the overall path neither shifts nor shrinks — only the step kinks round off.
+    QVector<QPointF> sc = centers;
+    for (int pass = 0; pass < kPanSmoothPasses; ++pass) {
+        QVector<QPointF> next = sc;
+        for (int i = 1; i + 1 < sc.size(); ++i) {
+            next[i].setX(0.25 * sc[i - 1].x() + 0.5 * sc[i].x() + 0.25 * sc[i + 1].x());
+            next[i].setY(0.25 * sc[i - 1].y() + 0.5 * sc[i].y() + 0.25 * sc[i + 1].y());
+        }
+        sc = next;
+    }
+
+    // Emit along the smoothed curve: fine spatial floor for fast pans, time floor
+    // for slow ones, and kPanHoldEps so a frozen centre emits nothing.
+    QPointF lastPt = seed;
+    qint64 lastT = firstTick - kPanMaxGapMs;
+    for (int i = 0; i < sc.size(); ++i) {
+        const double d = std::hypot(sc.at(i).x() - lastPt.x(), sc.at(i).y() - lastPt.y());
+        const bool farEnough  = d > kPanEmitFrac;
+        const bool timeEnough = d > kPanHoldEps && (times.at(i) - lastT) >= kPanMaxGapMs;
+        if (!farEnough && !timeEnough)
+            continue;
+        Keyframe k;
+        k.tMs = std::clamp<qint64>(times.at(i), 0, durationMs);
+        k.rect = g.rectAt(sc.at(i), z);
+        k.easeInMs = kPanEaseMs;
+        k.easeOutMs = zoomOutLead;
+        k.source = ZoomTimeline::Auto;
+        k.locked = false;
+        out.append(k);
+        lastPt = sc.at(i);
+        lastT = times.at(i);
+    }
+}
+
+// Emit the keyframes for one span into `out`. The dead-zone camera runs at 10 Hz;
+// emitDeadZonePan() smooths and lays down the follow-pan targets.
 void emitSpan(const Span &s, const Cam &cam, const Geometry &g, const Params &p,
               qint64 durationMs, QVector<Keyframe> &out)
 {
@@ -700,6 +802,8 @@ void emitSpan(const Span &s, const Cam &cam, const Geometry &g, const Params &p,
         z = std::max(1.0, p.zoomMin + (1.0 - p.zoomMin) * 0.25);
     } else {
         z = g.zoomForBbox(s.bbox, p);
+        if (s.evidenceCount <= 1)
+            z = 1.0 + (z - 1.0) * kSingleClickZoomSoften;   // lone click: wider framing
     }
     z = intensityZoom(z, p);
 
@@ -722,28 +826,9 @@ void emitSpan(const Span &s, const Cam &cam, const Geometry &g, const Params &p,
     // Zoom-in: ease full -> zoomed over [start, start+zoomInMs], landing here.
     mk(s.start + p.zoomInMs, g.rectAt(center, z), p.zoomInMs, p.zoomOutMs);
 
-    // Dead-zone pan. Half-extents of the inner dead zone the cursor roams free.
-    QPointF lastEmitted = center;
-    for (qint64 t = s.start + p.zoomInMs + kCameraTickMs; t < s.end; t += kCameraTickMs) {
-        const QRectF view = g.rectAt(center, z);
-        const double hx = p.deadZoneFrac * view.width() / 2.0;
-        const double hy = p.deadZoneFrac * view.height() / 2.0;
-        const QPointF c = cam.sample(t);
-        const double dx = c.x() - center.x();
-        const double dy = c.y() - center.y();
-        // Pan only enough to pull the cursor back onto the dead-zone edge.
-        if (dx > hx)      center.setX(center.x() + (dx - hx));
-        else if (dx < -hx) center.setX(center.x() + (dx + hx));
-        if (dy > hy)      center.setY(center.y() + (dy - hy));
-        else if (dy < -hy) center.setY(center.y() + (dy + hy));
-        center = g.rectAt(center, z).center();
-        const double emitDistance = std::max(0.02, std::min(view.width(), view.height()) * 0.09);
-        if (std::hypot(center.x() - lastEmitted.x(), center.y() - lastEmitted.y())
-            > emitDistance) {
-            mk(t, g.rectAt(center, z), kPanEaseMs, p.zoomOutMs);
-            lastEmitted = center;
-        }
-    }
+    // Dead-zone follow-pan (smoothed, spring-friendly cadence).
+    emitDeadZonePan(center, z, cam, g, p, s.start + p.zoomInMs + kCameraTickMs, s.end,
+                    p.zoomOutMs, durationMs, out);
 
     // Zoom-out: ease zoomed -> full over [end, end+zoomOutMs].
     mk(s.end + p.zoomOutMs, g.full(), p.zoomOutMs, p.zoomOutMs);
@@ -800,6 +885,16 @@ BaseTrack buildBaseTrack(const Cam &cam, const Geometry &g, qint64 durationMs)
         bt.t.append(t);
         bt.c.append(center);
     }
+    // Low-pass the base-crop centres (endpoints held) so the slow follow reads as a
+    // smooth glide, not the dead-zone's step kinks — same fix as emitDeadZonePan.
+    for (int pass = 0; pass < kPanSmoothPasses; ++pass) {
+        QVector<QPointF> next = bt.c;
+        for (int i = 1; i + 1 < bt.c.size(); ++i) {
+            next[i].setX(0.25 * bt.c.at(i - 1).x() + 0.5 * bt.c.at(i).x() + 0.25 * bt.c.at(i + 1).x());
+            next[i].setY(0.25 * bt.c.at(i - 1).y() + 0.5 * bt.c.at(i).y() + 0.25 * bt.c.at(i + 1).y());
+        }
+        bt.c = next;
+    }
     return bt;
 }
 
@@ -810,10 +905,13 @@ void emitSpanFill(const Span &s, const Cam &cam, const Geometry &g, const Params
                   const BaseTrack &base, qint64 durationMs, QVector<Keyframe> &out)
 {
     double z;
-    if (s.dwell)
+    if (s.dwell) {
         z = std::max(1.0, p.zoomMin + (1.0 - p.zoomMin) * 0.25);
-    else
+    } else {
         z = g.zoomForBbox(s.bbox, p);
+        if (s.evidenceCount <= 1)
+            z = 1.0 + (z - 1.0) * kSingleClickZoomSoften;   // lone click: wider framing
+    }
     z = intensityZoom(z, p);
 
     QPointF center = g.centerForBbox(s.bbox, s.focus, z, p);
@@ -834,26 +932,9 @@ void emitSpanFill(const Span &s, const Cam &cam, const Geometry &g, const Params
     // Zoom-in onto the cluster centroid.
     mk(s.start + p.zoomInMs, g.rectAt(center, z), p.zoomInMs, p.zoomOutMs);
 
-    QPointF lastEmitted = center;
-    for (qint64 t = s.start + p.zoomInMs + kCameraTickMs; t < s.end; t += kCameraTickMs) {
-        const QRectF view = g.rectAt(center, z);
-        const double hx = p.deadZoneFrac * view.width() / 2.0;
-        const double hy = p.deadZoneFrac * view.height() / 2.0;
-        const QPointF c = cam.sample(t);
-        const double dx = c.x() - center.x();
-        const double dy = c.y() - center.y();
-        if (dx > hx)       center.setX(center.x() + (dx - hx));
-        else if (dx < -hx) center.setX(center.x() + (dx + hx));
-        if (dy > hy)       center.setY(center.y() + (dy - hy));
-        else if (dy < -hy) center.setY(center.y() + (dy + hy));
-        center = g.rectAt(center, z).center();
-        const double emitDistance = std::max(0.02, std::min(view.width(), view.height()) * 0.09);
-        if (std::hypot(center.x() - lastEmitted.x(), center.y() - lastEmitted.y())
-            > emitDistance) {
-            mk(t, g.rectAt(center, z), kPanEaseMs, p.zoomOutMs);
-            lastEmitted = center;
-        }
-    }
+    // Dead-zone follow-pan (smoothed, spring-friendly cadence).
+    emitDeadZonePan(center, z, cam, g, p, s.start + p.zoomInMs + kCameraTickMs, s.end,
+                    p.zoomOutMs, durationMs, out);
 
     // Zoom-out back to the base crop (following the cursor at that instant).
     mk(s.end + p.zoomOutMs, g.rectAt(base.at(s.end + p.zoomOutMs), 1.0), p.zoomOutMs, p.zoomOutMs);
@@ -867,8 +948,10 @@ QVector<Keyframe> KeyframeEngine::generate(const CursorTrack &cursor,
                                            qint64 durationMs,
                                            const QString &aspect,
                                            const Params &params,
-                                           const QVector<Keyframe> &pinned)
+                                           const QVector<Keyframe> &pinned,
+                                           const QVector<QPair<qint64, qint64>> &typingBursts)
 {
+    durationMs = std::max<qint64>(0, durationMs);
     const double W = videoSize.width() > 0 ? videoSize.width() : 1.0;
     const double H = videoSize.height() > 0 ? videoSize.height() : 1.0;
 
@@ -882,10 +965,60 @@ QVector<Keyframe> KeyframeEngine::generate(const CursorTrack &cursor,
     bool anyDown = false;
     for (const ClickEvent &e : clicks.events())
         if (e.state == ClickEvent::Down) { anyDown = true; break; }
-    if (anyDown)
-        segs = clusterClicks(clicks, params, W, H);
-    else
+    if (anyDown) {
+        segs = clusterClicks(clicks, params, W, H, durationMs);
+        // Drive-by suppression (see kPostClickDwellMs): drop lone clicks the
+        // cursor immediately travelled away from. Runs before the dwell
+        // fallback so an all-drive-by recording still gets dwell framing.
+        if (!cam.empty()) {
+            QVector<Segment> kept;
+            kept.reserve(segs.size());
+            for (const Segment &s : segs) {
+                if (s.evidenceCount >= 2) {
+                    kept.append(s);
+                    continue;
+                }
+                const int i0 = cam.indexFor(s.tFirst);
+                const int i1 =
+                    cam.indexFor(std::min(durationMs, s.tFirst + kPostClickDwellMs));
+                if (std::hypot(cam.x.at(i1) - cam.x.at(i0), cam.y.at(i1) - cam.y.at(i0))
+                    <= kDriveByDistFrac)
+                    kept.append(s);
+            }
+            segs = kept;
+        }
+        if (segs.isEmpty())
+            segs = dwellSegments(cam, params, durationMs);
+    } else {
         segs = dwellSegments(cam, params, durationMs);
+    }
+    // Typing activity is dwell evidence: fold each burst in as a dwell segment
+    // anchored where the cursor was when typing began (the field you clicked
+    // into). shapeSpans then merges it with a nearby click zoom and holds the
+    // framing through the burst instead of pumping out and back in.
+    for (const auto &burst : typingBursts) {
+        const qint64 bStart = std::max<qint64>(0, burst.first);
+        const qint64 bEnd = std::min(burst.second, durationMs);
+        if (bEnd <= bStart)
+            continue;
+        Segment s;
+        s.dwell = true;
+        s.tFirst = bStart;
+        s.tLast = bEnd;
+        QPointF focus(0.5, 0.5);
+        if (!cam.empty()) {
+            const int idx = cam.indexFor(bStart);
+            focus = QPointF(cam.x.at(idx), cam.y.at(idx));
+        }
+        s.bbox = QRectF(focus, QSizeF(0, 0));
+        s.focus = focus;
+        s.evidenceCount = 1;
+        segs.append(s);
+    }
+    if (!typingBursts.isEmpty())
+        std::stable_sort(segs.begin(), segs.end(),
+                         [](const Segment &a, const Segment &b) { return a.tFirst < b.tFirst; });
+
     if (params.zoomIntensity <= 0.02)
         segs.clear();
 
@@ -900,15 +1033,31 @@ QVector<Keyframe> KeyframeEngine::generate(const CursorTrack &cursor,
     // Assemble. Fit mode opens on the full frame and returns to it between spans;
     // fill mode opens on the (cursor-following) OUTPUT-aspect crop and returns to
     // it, slow-panning through the idle gaps so there is never a letterbox section.
+    // The opener is a span-less single keyframe, so the `windows` routing below
+    // can't protect it: a pinned kf at t=0 has a zero-width window and the
+    // belt-and-braces filter compares strictly. Emitting an Auto opener anyway
+    // would stack it at t=0 next to the user's own — and since survivors sort
+    // first, the Auto one lands LAST, which is exactly the one setKeyframes()
+    // reads for initialRect. The user's edit would lose to a duplicate.
+    bool havePinnedOpener = false;
+    for (const Keyframe &k : pinned) {
+        if (k.tMs <= 0) {
+            havePinnedOpener = true;
+            break;
+        }
+    }
+
     QVector<Keyframe> out;
     if (!params.fill) {
-        Keyframe first;
-        first.tMs = 0;
-        first.rect = g.full();
-        first.easeInMs = 0;
-        first.easeOutMs = 0;
-        first.source = ZoomTimeline::Auto;
-        out.append(first);
+        if (!havePinnedOpener) {
+            Keyframe first;
+            first.tMs = 0;
+            first.rect = g.full();
+            first.easeInMs = 0;
+            first.easeOutMs = 0;
+            first.source = ZoomTimeline::Auto;
+            out.append(first);
+        }
 
         for (Span &s : spans) {
             if (!windows.isEmpty() && !trimSpanAgainstPinned(s, windows, params))
@@ -918,13 +1067,15 @@ QVector<Keyframe> KeyframeEngine::generate(const CursorTrack &cursor,
     } else {
         const BaseTrack base = buildBaseTrack(cam, g, durationMs);
 
-        Keyframe first;
-        first.tMs = 0;
-        first.rect = g.rectAt(base.at(0), 1.0);
-        first.easeInMs = 0;
-        first.easeOutMs = 0;
-        first.source = ZoomTimeline::Auto;
-        out.append(first);
+        if (!havePinnedOpener) {
+            Keyframe first;
+            first.tMs = 0;
+            first.rect = g.rectAt(base.at(0), 1.0);
+            first.easeInMs = 0;
+            first.easeOutMs = 0;
+            first.source = ZoomTimeline::Auto;
+            out.append(first);
+        }
 
         // Surviving spans + their [start, end+zoomOut] active intervals (base pans
         // are suppressed inside these — the span owns the framing there).
@@ -989,16 +1140,27 @@ QVector<Keyframe> KeyframeEngine::generate(const CursorTrack &cursor,
         out = filtered;
     }
 
-    // Strict, stable sort by time, then force strictly-increasing tMs so no two
-    // keyframes share an instant (the model contract) — collisions only happen
-    // at clamped span boundaries, so a 1 ms nudge is harmless.
+    // Strict, stable sort by time, then resolve clamped boundary collisions. A
+    // final-instant collision keeps the last target instead of nudging beyond
+    // durationMs.
     std::stable_sort(out.begin(), out.end(),
                      [](const Keyframe &a, const Keyframe &b) { return a.tMs < b.tMs; });
-    for (int i = 1; i < out.size(); ++i)
-        if (out[i].tMs <= out[i - 1].tMs)
-            out[i].tMs = out[i - 1].tMs + 1;
+    QVector<Keyframe> strict;
+    strict.reserve(out.size());
+    for (Keyframe keyframe : std::as_const(out)) {
+        keyframe.tMs = std::clamp<qint64>(keyframe.tMs, 0, durationMs);
+        if (strict.isEmpty() || keyframe.tMs > strict.last().tMs) {
+            strict.append(keyframe);
+        } else if (strict.last().tMs < durationMs) {
+            keyframe.tMs = strict.last().tMs + 1;
+            strict.append(keyframe);
+        } else {
+            keyframe.tMs = durationMs;
+            strict.last() = keyframe; // last target at the final instant wins
+        }
+    }
 
-    return out;
+    return strict;
 }
 
 // ---------------------------------------------------------------------------

@@ -71,6 +71,10 @@ public:
         qint64 trimInMs = 0;
         qint64 durMs = 0;      // exported span length
         double fps = 30.0;     // export frame rate
+        // Clip audio (from StudioProject): muted drops the audio stream (-an);
+        // volume < 1 applies ffmpeg's linear `volume=` filter on the mux.
+        bool audioMuted = false;
+        double audioVolume = 1.0;
         int outW = 1920;       // export width  (even-guarded by start())
         int outH = 1080;       // export height (even-guarded by start())
         QString format = QStringLiteral("mp4"); // "mp4" | "webm" | "gif"

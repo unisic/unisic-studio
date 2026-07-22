@@ -31,6 +31,10 @@ Rectangle {
         ignoreUnknownSignals: true
         function onChanged() { panel._rev = panel._rev + 1 }
     }
+    // USlider emits `moved` on press and on every drag step, so a direct
+    // regenerate would run a full synchronous KeyframeEngine::generate() ~21
+    // times per drag (stepSize 0.05 over 0..1) on the GUI thread. The slider's
+    // value binding stays live; only the regenerate is coalesced.
     Timer {
         id: zoomIntensityDebounce
         interval: 240
@@ -52,14 +56,42 @@ Rectangle {
     TapHandler { onTapped: panel.deselect() }
 
     // Index maps between the model's string enums and the combo rows.
-    readonly property var _bgTypes: ["color", "gradient", "wallpaper", "desktopBlur"]
+    readonly property var _bgTypes: ["none", "color", "gradient", "wallpaper", "desktopBlur"]
     readonly property var _frames: ["none", "minimal", "titlebar"]
     readonly property var _webcamPositions: ["bottomRight", "bottomLeft", "topRight", "topLeft"]
     readonly property var _cursorStyles: ["pointer", "system", "dot", "circle"]
 
+    // Named motion presets (Screen Studio-style "animation styles"): each chip
+    // writes BOTH tuning values, so `checked` is honest conjunctive equality —
+    // lit only when intensity AND smoothness both match (same pattern as
+    // ExportDialog's quality presets). "Balanced" mirrors the shipped defaults.
+    readonly property var _motionPresets: [
+        { label: qsTr("Gentle"),   intensity: 0.45, smoothness: 0.85 },
+        { label: qsTr("Balanced"), intensity: 0.72, smoothness: 0.68 },
+        { label: qsTr("Snappy"),   intensity: 0.85, smoothness: 0.45 },
+        { label: qsTr("Rapid"),    intensity: 1.0,  smoothness: 0.30 }
+    ]
+    function motionPresetChecked(p) {
+        if (typeof editorProject === "undefined" || !editorProject) return false
+        return Math.abs(editorProject.zoom.zoomIntensity - p.intensity) < 0.01
+            && Math.abs(editorProject.zoom.motionSmoothness - p.smoothness) < 0.01
+    }
+    // No chip matches → the user drove the sliders directly; show a quiet
+    // "Custom" hint instead of an unlit row that reads as "nothing selected".
+    readonly property bool customMotionPreset: {
+        for (var i = 0; i < _motionPresets.length; ++i)
+            if (motionPresetChecked(_motionPresets[i]))
+                return false
+        return true
+    }
+
     // Whether the loaded project actually recorded a webcam sidecar.
     readonly property bool hasWebcam: (typeof editorProject !== "undefined" && editorProject)
                                       ? editorProject.hasWebcam : false
+
+    // Clip-audio state (PROJECT-level, not StyleModel — see StudioProject).
+    readonly property bool audioMuted: (typeof editorProject !== "undefined" && editorProject)
+                                       ? editorProject.audioMuted : false
 
     // Curated gradient presets (pure colour pairs — NO binary assets). First is
     // the muted kit Primary→Secondary default. Clicking a swatch sets both stops.
@@ -216,12 +248,22 @@ Rectangle {
             color: tile.active ? Theme.surfaceHi : Theme.surface
             border.width: tile.active ? 2 : 1
             border.color: tile.active ? Theme.accent : Theme.divider
-            // Pointer: a diagonal arrow. System: the recorded mouse glyph.
+            // Pointer: the shipped cursor asset itself (same qrc URL the
+            // composition renders), so the tile previews the real thing.
+            Image {
+                anchors.centerIn: parent
+                visible: tile.sid === "pointer"
+                source: "qrc:/resources/cursors/pointer.svg"
+                width: 15
+                height: 20   // pointer.svg viewBox is 24×32 (3:4)
+                sourceSize: Qt.size(30, 40)   // 2× for crisp SVG rasterisation
+                smooth: true
+            }
+            // System: the recorded mouse glyph.
             UIcon {
                 anchors.centerIn: parent
-                visible: tile.sid === "pointer" || tile.sid === "system"
-                name: tile.sid === "pointer" ? "arrow-up" : "input-mouse"
-                rotation: tile.sid === "pointer" ? -45 : 0
+                visible: tile.sid === "system"
+                name: "input-mouse"
                 size: 20
                 color: Theme.textPrimary
             }
@@ -444,6 +486,37 @@ Rectangle {
                         visible: motionHeader.expanded
                         width: parent.width
                         spacing: Theme.spacingM
+                        // Preset chips are shortcuts over the two sliders below,
+                        // not a replacement. They coalesce the regenerate
+                        // through the same debounce as the intensity slider — a
+                        // direct Studio.regenerateZoom here would bypass it.
+                        Flow {
+                            width: parent.width
+                            spacing: Theme.spacingS
+                            Repeater {
+                                model: panel._motionPresets
+                                UFilterChip {
+                                    required property var modelData
+                                    text: modelData.label
+                                    checked: panel.motionPresetChecked(modelData)
+                                    onClicked: {
+                                        if (typeof editorProject === "undefined" || !editorProject)
+                                            return
+                                        editorProject.zoom.zoomIntensity = modelData.intensity
+                                        editorProject.zoom.motionSmoothness = modelData.smoothness
+                                        zoomIntensityDebounce.restart()
+                                    }
+                                }
+                            }
+                        }
+                        Text {
+                            width: parent.width
+                            visible: panel.customMotionPreset
+                            text: qsTr("Custom — tuned with the sliders below.")
+                            color: Theme.textTertiary
+                            font.pixelSize: Theme.fontS
+                            wrapMode: Text.WordWrap
+                        }
                         LabeledSlider {
                             label: qsTr("Zoom intensity")
                             from: 0; to: 1; stepSize: 0.05; decimals: 2
@@ -476,6 +549,57 @@ Rectangle {
                 }
             }
 
+            // ---- Video (clip audio) ------------------------------------------
+            UCard {
+                width: parent.width
+                Column {
+                    width: parent.width
+                    spacing: videoHeader.expanded ? Theme.spacingM : 0
+                    SectionHeader {
+                        id: videoHeader
+                        title: qsTr("Video")
+                        iconName: "video-x-generic"
+                    }
+                    Column {
+                        visible: videoHeader.expanded
+                        width: parent.width
+                        spacing: Theme.spacingM
+                        // Project stores linear gain 0..1; the slider shows %.
+                        LabeledSlider {
+                            enabled: !panel.audioMuted
+                            opacity: enabled ? 1 : 0.4
+                            label: qsTr("Volume")
+                            from: 0; to: 100; stepSize: 1; suffix: "%"
+                            value: (typeof editorProject !== "undefined" && editorProject)
+                                   ? editorProject.audioVolume * 100 : 100
+                            onMoved: (v) => {
+                                if (typeof editorProject !== "undefined" && editorProject)
+                                    editorProject.audioVolume = v / 100
+                            }
+                        }
+                        Row {
+                            width: parent.width
+                            Text {
+                                text: qsTr("Mute")
+                                color: Theme.textSecondary
+                                font.pixelSize: Theme.fontS
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: parent.width - muteSwitch.width
+                                elide: Text.ElideRight
+                            }
+                            USwitch {
+                                id: muteSwitch
+                                checked: panel.audioMuted
+                                onToggled: (c) => {
+                                    if (typeof editorProject !== "undefined" && editorProject)
+                                        editorProject.audioMuted = c
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // ---- Background --------------------------------------------------
             UCard {
                 width: parent.width
@@ -490,7 +614,7 @@ Rectangle {
 
                         LabeledCombo {
                             label: qsTr("Type")
-                            model: [qsTr("Color"), qsTr("Gradient"), qsTr("Wallpaper"), qsTr("Desktop blur")]
+                            model: [qsTr("None"), qsTr("Color"), qsTr("Gradient"), qsTr("Wallpaper"), qsTr("Desktop blur")]
                             currentIndex: sm ? Math.max(0, panel._bgTypes.indexOf(sm.backgroundType)) : 0
                             onActivated: (i) => { if (sm) sm.backgroundType = panel._bgTypes[i] }
                         }

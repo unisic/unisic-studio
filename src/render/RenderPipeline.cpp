@@ -306,6 +306,12 @@ void RenderPipeline::startEncoder()
         m_gifFinalTemp = m_s.outputPath + QStringLiteral(".partial.gif");
         args << QStringLiteral("-an") << QStringLiteral("-c:v") << QStringLiteral("ffv1")
              << QStringLiteral("-pix_fmt") << QStringLiteral("bgr0") << m_gifIntermediate;
+    } else if (m_s.audioMuted) {
+        // Clip audio muted → skip the master input entirely and drop the audio
+        // stream (-an): smaller file, and WYSIWYG with the muted preview.
+        args << QStringLiteral("-map") << QStringLiteral("0:v:0");
+        args += videoCodecArgs(m_s.format, m_s.crf, m_s.preferHardware);
+        args << QStringLiteral("-an") << m_s.outputPath;
     } else {
         // Audio (and A/V trim) from the master; ? makes audio optional.
         args << QStringLiteral("-ss") << ss << QStringLiteral("-t") << dur << QStringLiteral("-i")
@@ -318,6 +324,12 @@ void RenderPipeline::startEncoder()
         else
             args << QStringLiteral("-c:a") << QStringLiteral("aac") << QStringLiteral("-b:a")
                  << QStringLiteral("192k");
+        // Clip volume < 1 → linear gain on the (re-encoded anyway) audio. The
+        // same scale the preview's AudioOutput.volume applies. A no-op when the
+        // optional 1:a:0? map matched nothing (per-stream filters need a stream).
+        if (m_s.audioVolume < 0.9995)
+            args << QStringLiteral("-af")
+                 << QStringLiteral("volume=%1").arg(QString::number(m_s.audioVolume, 'f', 4));
         args << QStringLiteral("-shortest") << m_s.outputPath;
     }
 

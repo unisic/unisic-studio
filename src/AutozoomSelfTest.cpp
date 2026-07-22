@@ -270,6 +270,7 @@ void AutozoomSelfTest::run(StudioApp *studio)
                           && trajectoryWritten && motion.maxCameraEdgeJump < 0.03
                           && motion.maxCenterOvershootRatio < 0.02
                           && motion.maxZoomOvershootRatio < 0.02
+                          && motion.unsettledSegments == 0 && motion.maxSettlingMs <= 1200
                           && motion.holdDrift < 0.0025 && motion.holdRmsVelocity < 0.02;
     fprintf(stderr,
             "autozoom-test: trajectory=%s deterministic=%s bounded=%s samples=%lld\n",
@@ -278,12 +279,13 @@ void AutozoomSelfTest::run(StudioApp *studio)
     fprintf(stderr,
             "autozoom-test: motion edgeJump=%.6f centerV=%.3f centerA=%.3f zoomV=%.3f "
             "zoomA=%.3f overshoot(center=%.4f zoom=%.4f) hold(drift=%.6f rmsV=%.6f) "
-            "settleMax=%lldms\n",
+            "settleMax=%lldms settled=%d unsettled=%d\n",
             motion.maxCameraEdgeJump, motion.maxCameraCenterVelocity,
             motion.maxCameraCenterAcceleration, motion.maxZoomVelocity,
             motion.maxZoomAcceleration, motion.maxCenterOvershootRatio,
             motion.maxZoomOvershootRatio, motion.holdDrift, motion.holdRmsVelocity,
-            static_cast<long long>(motion.maxSettlingMs));
+            static_cast<long long>(motion.maxSettlingMs), motion.settledSegments,
+            motion.unsettledSegments);
 
     // --- export with the camera + dot cursor + ripple on ---
     auto runExport = [&](const QString &out) -> bool {

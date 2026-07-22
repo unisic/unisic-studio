@@ -28,8 +28,10 @@ class StudioSettings : public QObject
     QML_UNCREATABLE("Provided by StudioApp")
 
     Q_PROPERTY(QString projectsDirectory READ projectsDirectory WRITE setProjectsDirectory NOTIFY projectsDirectoryChanged)
-    Q_PROPERTY(int windowWidth READ windowWidth WRITE setWindowWidth NOTIFY windowWidthChanged)
-    Q_PROPERTY(int windowHeight READ windowHeight WRITE setWindowHeight NOTIFY windowHeightChanged)
+    // MUST stay a Q_PROPERTY: the editor binds it in QML. Without the
+    // declaration the QML read is silently `undefined`, the width math turns
+    // NaN, and the whole inspector vanishes with no error anywhere.
+    Q_PROPERTY(int editorInspectorWidth READ editorInspectorWidth WRITE setEditorInspectorWidth NOTIFY editorInspectorWidthChanged)
 
     // --- recording (M2) ---
     Q_PROPERTY(int recordFps READ recordFps WRITE setRecordFps NOTIFY recordFpsChanged)
@@ -39,8 +41,22 @@ class StudioSettings : public QObject
     Q_PROPERTY(int recordCountdownSec READ recordCountdownSec WRITE setRecordCountdownSec NOTIFY recordCountdownSecChanged)
     Q_PROPERTY(int recordMaxDurationSec READ recordMaxDurationSec WRITE setRecordMaxDurationSec NOTIFY recordMaxDurationSecChanged)
     Q_PROPERTY(bool clickCaptureEnabled READ clickCaptureEnabled WRITE setClickCaptureEnabled NOTIFY clickCaptureEnabledChanged)
+    // Keyboard-TIMING capture (never keycodes) so the camera holds its zoom while
+    // you type. Default ON (maintainer decision 2026-07-17): the data is only
+    // "a key went down at time T" pairs, local-only, and the toggle stays here
+    // for anyone who wants it off.
+    Q_PROPERTY(bool typingZoomEnabled READ typingZoomEnabled WRITE setTypingZoomEnabled NOTIFY typingZoomEnabledChanged)
     Q_PROPERTY(bool hideWindowWhileRecording READ hideWindowWhileRecording WRITE setHideWindowWhileRecording NOTIFY hideWindowWhileRecordingChanged)
     Q_PROPERTY(bool hudCollapseWhileRecording READ hudCollapseWhileRecording WRITE setHudCollapseWhileRecording NOTIFY hudCollapseWhileRecordingChanged)
+    // Where the recording HUD sits (layer-shell anchor + plain-toplevel fallback):
+    // bottomCenter | bottomLeft | bottomRight | topCenter | topLeft | topRight.
+    Q_PROPERTY(QString hudPlacement READ hudPlacement WRITE setHudPlacement NOTIFY hudPlacementChanged)
+    // Fully hide the on-screen HUD while the capture is LIVE (RecRecording/Paused)
+    // so nothing burns into a monitor capture — the portal cannot exclude an
+    // overlay from a monitor stream, so hiding is the only true fix. The countdown
+    // still shows (it is excised from the file). Control while hidden is via bound
+    // hotkeys running `unisic-studio --stop` / `--pause` / `--cancel`. Default ON.
+    Q_PROPERTY(bool hudHideWhileRecording READ hudHideWhileRecording WRITE setHudHideWhileRecording NOTIFY hudHideWhileRecordingChanged)
     // Optional webcam capture (default OFF): records a v4l2 device into a sidecar
     // alongside the screen, composited as an overlay in the editor.
     Q_PROPERTY(bool recordWebcam READ recordWebcam WRITE setRecordWebcam NOTIFY recordWebcamChanged)
@@ -75,8 +91,9 @@ public:
     }
 
     U_SETTING(QString, projectsDirectory, setProjectsDirectory, "projectsDirectory", defaultProjectsDir())
-    U_SETTING(int, windowWidth, setWindowWidth, "windowWidth", 1280)
-    U_SETTING(int, windowHeight, setWindowHeight, "windowHeight", 800)
+    // Editor inspector pane width (px), persisted across sessions so a user who
+    // widens it keeps it. Clamped in the editor, not here.
+    U_SETTING(int, editorInspectorWidth, setEditorInspectorWidth, "editorInspectorWidth", 320)
 
     // Recording (M2). Bare top-level keys, no "general" group (the [%General]
     // landmine). recordMaxDurationSec 0 = unlimited; masterCrf is x264 CRF (lower
@@ -88,6 +105,7 @@ public:
     U_SETTING(int, recordCountdownSec, setRecordCountdownSec, "recordCountdownSec", 3)
     U_SETTING(int, recordMaxDurationSec, setRecordMaxDurationSec, "recordMaxDurationSec", 0)
     U_SETTING(bool, clickCaptureEnabled, setClickCaptureEnabled, "clickCaptureEnabled", true)
+    U_SETTING(bool, typingZoomEnabled, setTypingZoomEnabled, "typingZoomEnabled", true)
     // Hide the main window while a recording is live (like a screen recorder), so
     // the shell doesn't land in the capture. It returns on stop/cancel/fail.
     U_SETTING(bool, hideWindowWhileRecording, setHideWindowWhileRecording, "hideWindowWhileRecording", true)
@@ -95,14 +113,21 @@ public:
     // (expands on hover / while paused). Screencast can't exclude the HUD from the
     // capture, so this is the honest burn-in mitigation. Default ON.
     U_SETTING(bool, hudCollapseWhileRecording, setHudCollapseWhileRecording, "hudCollapseWhileRecording", true)
+    U_SETTING(QString, hudPlacement, setHudPlacement, "hudPlacement", QStringLiteral("bottomCenter"))
+    U_SETTING(bool, hudHideWhileRecording, setHudHideWhileRecording, "hudHideWhileRecording", true)
     // Webcam: default OFF (opt-in, privacy). Device is a v4l2 path.
     U_SETTING(bool, recordWebcam, setRecordWebcam, "recordWebcam", false)
     U_SETTING(QString, webcamDevice, setWebcamDevice, "webcamDevice", QStringLiteral("/dev/video0"))
+    // Opaque xdg-desktop-portal ScreenCast restore token: replays the last
+    // source pick so the picker only appears once. Portal-owned handle, not a
+    // user-facing value — no Q_PROPERTY, nothing in QML reads it. Cleared by
+    // forgetScreencastSource() and whenever the portal rejects it.
+    U_SETTING(QString, screencastRestoreToken, setScreencastRestoreToken,
+              "screencastRestoreToken", QString())
 
 signals:
     void projectsDirectoryChanged();
-    void windowWidthChanged();
-    void windowHeightChanged();
+    void editorInspectorWidthChanged();
     void recordFpsChanged();
     void masterCrfChanged();
     void recordSystemAudioChanged();
@@ -110,10 +135,14 @@ signals:
     void recordCountdownSecChanged();
     void recordMaxDurationSecChanged();
     void clickCaptureEnabledChanged();
+    void typingZoomEnabledChanged();
     void hideWindowWhileRecordingChanged();
     void hudCollapseWhileRecordingChanged();
+    void hudPlacementChanged();
+    void hudHideWhileRecordingChanged();
     void recordWebcamChanged();
     void webcamDeviceChanged();
+    void screencastRestoreTokenChanged();
 
 private:
     QSettings m_s{UnisicKit::filePath(), QSettings::IniFormat};

@@ -121,9 +121,40 @@ Window {
         }
     }
 
+    // The source region the composition shows while editing a keyframe in fill
+    // mode: the keyframe rect zoomed out 2x (clamped to the largest output-aspect
+    // crop), so the box has context around it WITHOUT the letterbox jump to
+    // source aspect (which is not what the export renders). Captured once per
+    // selection — deliberately NOT live-bound to the keyframe rect, or the view
+    // would chase the box while dragging it.
+    property rect editViewRect: Qt.rect(0, 0, 1, 1)
+    function computeEditView() {
+        if (selectedKeyframe < 0 || !editorProject || !editorProject.zoom)
+            return Qt.rect(0, 0, 1, 1)
+        var st = editorProject.style
+        if (!st || st.fillMode !== "fill")
+            return Qt.rect(0, 0, 1, 1)          // fit mode: whole source, as before
+        var out = outputAspect, src = srcAspect
+        if (Math.abs(out - src) < 1e-4)
+            return Qt.rect(0, 0, 1, 1)          // same aspect: full frame IS output-shaped
+        // Largest output-aspect crop of the source (normalized source coords).
+        var maxW = out >= src ? 1.0 : out / src
+        var maxH = out >= src ? src / out : 1.0
+        var m = editorProject.zoom.keyframeAt(selectedKeyframe)
+        if (!m || m.w === undefined || m.w <= 0 || m.w >= 0.98)
+            return Qt.rect((1 - maxW) / 2, (1 - maxH) / 2, maxW, maxH) // reset kf: base crop
+        var w = Math.min(m.w * 2, maxW)
+        var h = w * src / out                    // output-aspect: nh = nw * src/out
+        var x = Math.max(0, Math.min(m.x + m.w / 2 - w / 2, 1 - w))
+        var y = Math.max(0, Math.min(m.y + m.h / 2 - h / 2, 1 - h))
+        return Qt.rect(x, y, w, h)
+    }
+
     // Selecting a keyframe seeks to its instant so the on-canvas crop editor shows
-    // the source frame at that moment (the composition is forced to full-frame).
+    // the source frame at that moment, and captures the edit view for this
+    // selection (see computeEditView).
     onSelectedKeyframeChanged: {
+        editViewRect = computeEditView()
         if (selectedKeyframe >= 0 && editorProject && editorProject.zoom) {
             var m = editorProject.zoom.keyframeAt(selectedKeyframe)
             if (m && m.tMs !== undefined)
@@ -134,17 +165,28 @@ Window {
     // One seek entry point: with live playback it moves the player (whose
     // position feeds preview.sync); without it, it snaps the preview clock.
     function seekTo(ms) {
-        if (typeof preview !== "undefined" && preview) {
-            if (hasPlayback) preview.sync(ms, videoLoader.item.isPlaying)
-            else preview.snap(ms)
+        var targetMs = Math.max(0, ms)
+        var playing = hasPlayback && videoLoader.item.isPlaying
+        if (playing && (targetMs < trimInMs || targetMs >= trimOutMs)) {
+            videoLoader.item.pause()
+            if (webcamLoader.item) webcamLoader.item.pause()
+            playing = false
         }
-        if (hasPlayback) videoLoader.item.seek(ms)
-        if (webcamLoader.item) webcamLoader.item.seek(ms) // keep the overlay aligned
+        if (typeof preview !== "undefined" && preview) {
+            if (hasPlayback) preview.sync(targetMs, playing)
+            else preview.snap(targetMs)
+        }
+        if (hasPlayback) videoLoader.item.seek(targetMs)
+        if (webcamLoader.item) webcamLoader.item.seek(targetMs) // keep the overlay aligned
     }
 
     // Start playback from the trim-in point when the head is outside the trimmed
     // range, then toggle. Keeps the preview confined to the exported span.
     function playPause() {
+        // Playing means "show me the result" — leave keyframe-edit mode first so
+        // the composition returns to the real camera instead of the edit view.
+        if (selectedKeyframe >= 0)
+            selectedKeyframe = -1
         if (!videoLoader.item) return
         if (!videoLoader.item.isPlaying) {
             var pos = videoLoader.item.positionMs
@@ -159,6 +201,15 @@ Window {
             if (videoLoader.item.isPlaying) webcamLoader.item.play()
             else webcamLoader.item.pause()
         }
+    }
+
+    // Per-rendered-frame drive of the preview clock: FrameAnimation fires in the
+    // scene graph's animation phase, so the camera/cursor advance exactly once
+    // per displayed frame at ANY refresh rate (a fixed 16 ms timer beat against
+    // vsync and juddered). Runs only while the preview is playing.
+    FrameAnimation {
+        running: (typeof preview !== "undefined" && preview) ? preview.playing : false
+        onTriggered: preview.frameTick()
     }
 
     // Re-anchor the smoothing clock whenever the player reports a new position or
@@ -197,11 +248,54 @@ Window {
         }
     }
 
-    // Keyframe row indices are unstable across add/remove — drop the selection.
+    // Keyframe row indices are unstable across add/remove, so a plain count change
+    // drops the selection. A regenerate (replaceAutoKeyframes) is a full model
+    // reset, but Manual/locked keyframes SURVIVE it — so we remember the selected
+    // keyframe's time before the reset and re-select it afterwards if it lived.
+    // Without this, editing a zoom then nudging a slider deselects your keyframe.
+    property real _reselectTMs: -1     // selected kf time captured before a reset
+    property bool _resetInFlight: false
     Connections {
         target: editorProject ? editorProject.zoom : null
         ignoreUnknownSignals: true
-        function onCountChanged() { editorWindow.selectedKeyframe = -1 }
+        function onModelAboutToBeReset() {
+            var m = (editorWindow.selectedKeyframe >= 0 && editorProject && editorProject.zoom)
+                    ? editorProject.zoom.keyframeAt(editorWindow.selectedKeyframe) : null
+            editorWindow._reselectTMs = (m && m.tMs !== undefined) ? m.tMs : -1
+            editorWindow._resetInFlight = true
+        }
+        function onModelReset() {
+            var restore = -1
+            if (editorWindow._reselectTMs >= 0 && editorProject && editorProject.zoom) {
+                for (var i = 0; i < editorProject.zoom.count; ++i) {
+                    var m = editorProject.zoom.keyframeAt(i)
+                    if (m && m.tMs !== undefined
+                            && Math.abs(m.tMs - editorWindow._reselectTMs) < 0.5) {
+                        restore = i
+                        break
+                    }
+                }
+            }
+            editorWindow._reselectTMs = -1
+            editorWindow.selectedKeyframe = restore
+            // The conditional countChanged that replaceAutoKeyframes may emit fires
+            // synchronously right after this; keep the guard up until that batch
+            // drains so it doesn't clobber the restored selection.
+            Qt.callLater(function() { editorWindow._resetInFlight = false })
+        }
+        function onCountChanged() {
+            if (editorWindow._resetInFlight) return   // post-reset: selection already set
+            editorWindow.selectedKeyframe = -1        // genuine add/remove: indices shifted
+        }
+    }
+    Connections {
+        target: editorProject
+        ignoreUnknownSignals: true
+        function onTrimChanged() {
+            if (videoLoader.item && videoLoader.item.isPlaying
+                    && videoLoader.item.positionMs < editorWindow.trimInMs)
+                editorWindow.seekTo(editorWindow.trimInMs)
+        }
     }
 
     // ---- Keyboard shortcuts -------------------------------------------------
@@ -257,7 +351,9 @@ Window {
         onActivated: editorWindow.addZoomAtHead()
     }
     Shortcut { // Esc deselects the current keyframe (dialogs handle their own Esc).
-        sequence: StandardKey.Cancel
+        // Explicit "Escape" alongside StandardKey.Cancel: the platform theme may
+        // leave Cancel unbound, and this is the primary way OUT of edit mode.
+        sequences: [StandardKey.Cancel, "Escape"]
         enabled: editorWindow.selectedKeyframe >= 0
         onActivated: editorWindow.selectedKeyframe = -1
     }
@@ -278,73 +374,69 @@ Window {
         }
     }
 
-    // ---- Custom title bar (frameless) --------------------------------------
-    Rectangle {
+    // ---- Custom title bar (frameless) — shared with StudioMain -------------
+    // chromeTop is the bar height; downstream panes anchor to titleBar.bottom.
+    StudioTitleBar {
         id: titleBar
         anchors { top: parent.top; left: parent.left; right: parent.right }
         height: editorWindow.chromeTop
-        z: 20
-        gradient: Gradient {
-            GradientStop { position: 0.0; color: Qt.lighter(Theme.primary, 1.12) }
-            GradientStop { position: 1.0; color: Theme.primary }
-        }
-
-        MouseArea {
-            anchors.fill: parent
-            property real pressX: 0
-            property real pressY: 0
-            property bool moving: false
-            onPressed: (m) => { pressX = m.x; pressY = m.y; moving = false }
-            onPositionChanged: (m) => {
-                if (!moving && (Math.abs(m.x - pressX) > 6 || Math.abs(m.y - pressY) > 6)) {
-                    moving = true
-                    editorWindow.startSystemMove()
-                }
-            }
-            onDoubleClicked: editorWindow.visibility === Window.Maximized
-                             ? editorWindow.showNormal() : editorWindow.showMaximized()
-        }
-
-        Text {
-            anchors.left: parent.left
-            anchors.leftMargin: Theme.spacingL
-            anchors.verticalCenter: parent.verticalCenter
-            text: editorWindow.title
-            color: Theme.textPrimary
-            font.pixelSize: Theme.fontM
-            font.weight: Font.DemiBold
-        }
-
-        Row {
-            anchors.right: parent.right
-            anchors.rightMargin: 6
-            anchors.verticalCenter: parent.verticalCenter
-            spacing: 2
-            UIconButton {
-                iconName: "minus"; iconSize: 14; width: 30; height: 30
-                tooltip: qsTr("Minimize"); onClicked: editorWindow.showMinimized()
-            }
-            UIconButton {
-                iconName: "window"; iconSize: 13; width: 30; height: 30
-                tooltip: qsTr("Maximize")
-                onClicked: editorWindow.visibility === Window.Maximized
-                           ? editorWindow.showNormal() : editorWindow.showMaximized()
-            }
-            UIconButton {
-                iconName: "close"; iconSize: 14; width: 30; height: 30
-                tooltip: qsTr("Close"); onClicked: editorWindow.close()
-            }
-        }
+        window: editorWindow
     }
+
+    // Native edge/corner resizing for the frameless window (min-size aware).
+    StudioResizeGrips { window: editorWindow }
+
+    // Inspector width is user-draggable (see inspectorGrip) and persisted; the
+    // collapse toggle in the toolbar hides it for a distraction-free canvas.
+    readonly property int _inspectorMinW: 260
+    readonly property int _inspectorMaxW: 560
+    property int inspectorWidth: Math.max(_inspectorMinW,
+                                          Math.min(_inspectorMaxW, Studio.settings.editorInspectorWidth))
+    onInspectorWidthChanged: Studio.settings.editorInspectorWidth = inspectorWidth
+    property bool inspectorCollapsed: false
 
     // ---- Right: style inspector --------------------------------------------
     InspectorPanel {
         id: inspector
-        width: 300
+        width: editorWindow.inspectorCollapsed ? 0 : editorWindow.inspectorWidth
+        clip: true
+        visible: width > 0
         anchors { top: titleBar.bottom; right: parent.right; bottom: parent.bottom }
         styleModel: editorProject ? editorProject.style : null
         selectedKeyframe: editorWindow.selectedKeyframe
         onDeselect: editorWindow.selectedKeyframe = -1
+        Behavior on width { NumberAnimation { duration: Theme.animFast } }
+    }
+
+    // Drag handle between canvas and inspector — thin, brightens on hover/drag.
+    Rectangle {
+        id: inspectorGrip
+        visible: !editorWindow.inspectorCollapsed
+        width: 4
+        anchors { top: titleBar.bottom; bottom: parent.bottom; right: inspector.left }
+        color: (gripArea.containsMouse || gripArea.pressed) ? Theme.accent : Theme.border
+        opacity: (gripArea.containsMouse || gripArea.pressed) ? 0.9 : 0.35
+        Behavior on opacity { NumberAnimation { duration: Theme.animFast } }
+        MouseArea {
+            id: gripArea
+            anchors.fill: parent
+            anchors.leftMargin: -4   // fatter hit target than the visible line
+            anchors.rightMargin: -4
+            hoverEnabled: true
+            cursorShape: Qt.SplitHCursor
+            property real pressX: 0
+            property int pressWidth: 0
+            onPressed: (m) => {
+                pressX = mapToItem(editorWindow.contentItem, m.x, m.y).x
+                pressWidth = editorWindow.inspectorWidth
+            }
+            onPositionChanged: (m) => {
+                if (!pressed) return
+                var gx = mapToItem(editorWindow.contentItem, m.x, m.y).x
+                editorWindow.inspectorWidth = Math.max(editorWindow._inspectorMinW,
+                    Math.min(editorWindow._inspectorMaxW, pressWidth + (pressX - gx)))
+            }
+        }
     }
 
     // ---- Left: toolbar + canvas + transport --------------------------------
@@ -361,21 +453,47 @@ Window {
             anchors.rightMargin: Theme.spacingL
             height: 40
 
-            Text {
+            Row {
                 anchors.left: parent.left
                 anchors.verticalCenter: parent.verticalCenter
-                text: editorWindow.projectName
-                color: Theme.textPrimary
-                font.pixelSize: Theme.fontL
-                font.weight: Font.DemiBold
-                elide: Text.ElideRight
-                width: Math.min(implicitWidth, parent.width * 0.35)
+                spacing: Theme.spacingS
+
+                UIconButton {
+                    // Re-show the projects/launcher window. Closing it earlier only
+                    // hides it (it is the engine root), so this is the way back — no
+                    // more orphaned session.
+                    iconName: "go-home"
+                    iconSize: 14
+                    tooltip: qsTr("Projects")
+                    anchors.verticalCenter: parent.verticalCenter
+                    onClicked: Studio.showMainWindow()
+                }
+
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: editorWindow.projectName
+                    color: Theme.textPrimary
+                    font.pixelSize: Theme.fontL
+                    font.weight: Font.DemiBold
+                    elide: Text.ElideRight
+                    width: Math.min(implicitWidth, toolbar.width * 0.32)
+                }
             }
 
             Row {
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: Theme.spacingM
+
+                UIconButton {
+                    // Collapse the inspector for a distraction-free canvas.
+                    iconName: editorWindow.inspectorCollapsed ? "arrow-left" : "arrow-right"
+                    iconSize: 14
+                    tooltip: editorWindow.inspectorCollapsed ? qsTr("Show inspector")
+                                                             : qsTr("Hide inspector")
+                    anchors.verticalCenter: parent.verticalCenter
+                    onClicked: editorWindow.inspectorCollapsed = !editorWindow.inspectorCollapsed
+                }
 
                 Row {
                     spacing: Theme.spacingS
@@ -458,17 +576,21 @@ Window {
                 // A webcam feed is present only when one was recorded, the module
                 // is available, and the style enables it.
                 webcamHasFeed: webcamLoader.item !== null
-                // While a keyframe is selected, show the whole source frame so the
-                // on-canvas crop editor maps 1:1 to the video card.
+                // While a keyframe is selected: fit mode shows the whole source
+                // frame; fill mode keeps the output-aspect card (what the export
+                // renders) and shows editView — a zoomed-out context region
+                // around the keyframe. No more letterbox jump on selection.
                 editRect: editorWindow.selectedKeyframe >= 0
+                editView: editorWindow.editViewRect
             }
 
             // On-canvas zoom-target editor for the selected keyframe. Parented into
-            // the video slot (source-frame [0,1] coords, tracks the card); shown for
-            // timeline selection, '+ Zoom' and canvas-click alike. Editor-only —
-            // the export renderer instantiates CompositionRoot without it.
+            // the composition's editorSlot — OUTSIDE the camera transform — and maps
+            // source coords through the same view rect the composition displays.
+            // Editor-only — the export renderer instantiates CompositionRoot
+            // without it.
             Loader {
-                parent: comp.videoSlot
+                parent: comp.editorSlot
                 anchors.fill: parent
                 z: 100
                 active: editorProject !== null && editorWindow.selectedKeyframe >= 0
@@ -477,8 +599,24 @@ Window {
                     index: editorWindow.selectedKeyframe
                     sourceAspect: editorWindow.srcAspect
                     outputAspect: editorWindow.outputAspect
+                    viewRect: comp._effZoom
                     onDeselectRequested: editorWindow.selectedKeyframe = -1
                 }
+            }
+
+            // Explicit way OUT of keyframe-edit mode, floating over the canvas.
+            // (Esc, Space and clicking outside the box also leave it — this one
+            // is the discoverable path.)
+            UButton {
+                visible: editorWindow.selectedKeyframe >= 0
+                z: 200
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.top: parent.top
+                anchors.topMargin: Theme.spacingM
+                variant: "filled"
+                compact: true
+                text: qsTr("Done (Esc)")
+                onClicked: editorWindow.selectedKeyframe = -1
             }
 
             // Live video (only when QtMultimedia is present) parented into the

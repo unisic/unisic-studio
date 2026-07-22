@@ -64,7 +64,13 @@ TrajectoryMetrics analyzeTrajectory(const QVector<TrajectorySample> &samples,
                                   && std::isfinite(rect.width())
                                   && std::isfinite(rect.height())
                                   && std::isfinite(sample.cursor.x())
-                                  && std::isfinite(sample.cursor.y());
+                                  && std::isfinite(sample.cursor.y())
+                                  && std::isfinite(sample.cameraTarget.x())
+                                  && std::isfinite(sample.cameraTarget.y())
+                                  && std::isfinite(sample.cameraTarget.width())
+                                  && std::isfinite(sample.cameraTarget.height())
+                                  && sample.cameraTarget.width() > 0.0
+                                  && sample.cameraTarget.height() > 0.0;
         metrics.finite = metrics.finite && sampleFinite;
         metrics.bounded = metrics.bounded && rect.width() > 0.0 && rect.height() > 0.0
                           && rect.x() >= -1.0e-9 && rect.y() >= -1.0e-9
@@ -150,6 +156,9 @@ TrajectoryMetrics analyzeTrajectory(const QVector<TrajectorySample> &samples,
         const QPointF targetCenter = target.center();
         const double startZoom = zoomValue(startRect);
         const double targetZoom = zoomValue(target);
+        bool settled = false;
+        const bool assessable = samples.at(segmentEnd - 1).tMs
+                                - samples.at(segmentStart).tMs >= 150;
         for (int i = segmentStart; i < segmentEnd; ++i) {
             metrics.maxCenterOvershootRatio =
                 std::max(metrics.maxCenterOvershootRatio,
@@ -177,8 +186,15 @@ TrajectoryMetrics analyzeTrajectory(const QVector<TrajectorySample> &samples,
                 metrics.maxSettlingMs =
                     std::max(metrics.maxSettlingMs,
                              samples.at(i).tMs - samples.at(segmentStart).tMs);
+                settled = true;
                 break;
             }
+        }
+        if (assessable) {
+            if (settled)
+                ++metrics.settledSegments;
+            else
+                ++metrics.unsettledSegments;
         }
         segmentStart = segmentEnd;
     }

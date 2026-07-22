@@ -27,6 +27,12 @@ public:
     // front, stamps lastOpened (now), persists, and emits changed().
     void recordOpened(const QString &path, const QString &name, qint64 durationMs);
 
+    // Drop the entry for `path` (compared by absolute path, same rule as
+    // recordOpened). Persists and emits changed() when something was removed;
+    // returns whether it was. Used by the launcher's delete-recording action so
+    // the grid updates immediately instead of waiting for the next-load prune.
+    bool remove(const QString &path);
+
 signals:
     void changed();
 

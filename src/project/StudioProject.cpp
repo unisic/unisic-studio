@@ -158,12 +158,39 @@ void StudioProject::setTrimOutMs(qint64 v)
     emit trimChanged();
 }
 
+void StudioProject::setAudioMuted(bool v)
+{
+    if (m_audioMuted == v) return;
+    m_audioMuted = v;
+    markDirty();
+    emit audioChanged();
+}
+
+void StudioProject::setAudioVolume(double v)
+{
+    v = qBound(0.0, v, 1.0);
+    if (qFuzzyCompare(m_audioVolume, v)) return;
+    m_audioVolume = v;
+    markDirty();
+    emit audioChanged();
+}
+
 QVariantList StudioProject::clickDownTimesMs() const
 {
     QVariantList out;
     for (const ClickEvent &e : m_clicks.events())
         if (e.state == ClickEvent::Down)
             out.append(double(e.tMs));
+    return out;
+}
+
+QVariantList StudioProject::typingBurstRanges() const
+{
+    QVariantList out;
+    for (const auto &b : m_typingBursts) {
+        out.append(QVariantMap{{QStringLiteral("startMs"), double(b.first)},
+                               {QStringLiteral("endMs"), double(b.second)}});
+    }
     return out;
 }
 
@@ -205,17 +232,49 @@ QJsonObject StudioProject::toJson() const
         {QStringLiteral("inMs"), double(m_trimInMs)},
         {QStringLiteral("outMs"), double(m_trimOutMs)},
     };
+    QJsonObject audio{
+        {QStringLiteral("muted"), m_audioMuted},
+        {QStringLiteral("volume"), m_audioVolume},
+    };
     return QJsonObject{
         {QStringLiteral("schemaVersion"), kSchemaVersion},
         {QStringLiteral("video"), video},
         {QStringLiteral("recording"), recording},
         {QStringLiteral("trim"), trim},
+        {QStringLiteral("audio"), audio},
         {QStringLiteral("cursor"), m_cursor.toJson()},
         {QStringLiteral("clicks"), m_clicks.toJson()},
+        {QStringLiteral("typing"), typingToJson()},
         {QStringLiteral("zoom"), m_zoom->toJson()},
         {QStringLiteral("style"), m_style->toJson()},
         {QStringLiteral("exportSettings"), m_exportSettings},
     };
+}
+
+QJsonArray StudioProject::typingToJson() const
+{
+    QJsonArray a;
+    for (const auto &b : m_typingBursts) {
+        // Two-element [start,end] pairs — deliberately timing only, no keys.
+        a.append(QJsonArray{double(b.first), double(b.second)});
+    }
+    return a;
+}
+
+QList<QPair<qint64, qint64>> StudioProject::typingFromJson(const QJsonArray &a)
+{
+    QList<QPair<qint64, qint64>> out;
+    out.reserve(a.size());
+    for (const QJsonValue &v : a) {
+        const QJsonArray p = v.toArray();
+        if (p.size() < 2)
+            continue;
+        const qint64 s = qint64(p.at(0).toDouble());
+        const qint64 e = qint64(p.at(1).toDouble());
+        if (e > s)
+            out.append({s, e});
+    }
+    return out;
 }
 
 bool StudioProject::save(const QString &path, QString *error)
@@ -336,8 +395,15 @@ StudioProject *StudioProject::load(const QString &path, QString *error)
     p->m_trimInMs = qint64(trim.value(QStringLiteral("inMs")).toDouble());
     p->m_trimOutMs = qint64(trim.value(QStringLiteral("outMs")).toDouble());
 
+    // Additive: projects saved before clip audio existed have no "audio" object;
+    // toObject() yields empty and the value defaults apply (unmuted, volume 1).
+    const QJsonObject audio = o.value(QStringLiteral("audio")).toObject();
+    p->m_audioMuted = audio.value(QStringLiteral("muted")).toBool(false);
+    p->m_audioVolume = qBound(0.0, audio.value(QStringLiteral("volume")).toDouble(1.0), 1.0);
+
     p->m_cursor = CursorTrack::fromJson(o.value(QStringLiteral("cursor")).toObject());
     p->m_clicks = ClickTrack::fromJson(o.value(QStringLiteral("clicks")).toArray());
+    p->m_typingBursts = typingFromJson(o.value(QStringLiteral("typing")).toArray());
     p->m_zoom->fromJson(o.value(QStringLiteral("zoom")).toObject());
     p->m_style->fromJson(o.value(QStringLiteral("style")).toObject());
     p->m_exportSettings = o.value(QStringLiteral("exportSettings")).toObject();

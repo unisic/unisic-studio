@@ -20,6 +20,10 @@ Window {
     title: qsTr("Unisic Studio")
     color: Theme.backgroundDeep
 
+    // Frameless with the shared hand-built chrome (same as EditorWindow), so the
+    // app never shows system decorations. Content anchors below titleBar.bottom.
+    flags: Qt.Window | Qt.FramelessWindowHint
+
     property int currentPage: 0
 
     function mmss(ms) {
@@ -53,10 +57,23 @@ Window {
         }
     }
 
+    // Shared custom chrome (identical to EditorWindow). Its height is the top
+    // offset every content pane below is anchored to (titleBar.bottom).
+    StudioTitleBar {
+        id: titleBar
+        anchors { top: parent.top; left: parent.left; right: parent.right }
+        window: window
+    }
+
+    // Native edge/corner resizing for the frameless window (min-size aware).
+    StudioResizeGrips { window: window }
+
     Rectangle { // sidebar
         id: sidebar
         width: 224
-        height: parent.height
+        anchors.left: parent.left
+        anchors.top: titleBar.bottom
+        anchors.bottom: parent.bottom
         gradient: Gradient {
             GradientStop { position: 0.0; color: Qt.lighter(Theme.primary, 1.12) }
             GradientStop { position: 1.0; color: Theme.primary }
@@ -134,7 +151,7 @@ Window {
     // Settings page (lazy): shown when the Settings sidebar entry is active.
     Loader {
         anchors.left: sidebar.right
-        anchors.top: parent.top
+        anchors.top: titleBar.bottom
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         active: window.currentPage === 1
@@ -146,7 +163,7 @@ Window {
     Item {
         id: content
         anchors.left: sidebar.right
-        anchors.top: parent.top
+        anchors.top: titleBar.bottom
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         visible: window.currentPage === 0
@@ -291,6 +308,9 @@ Window {
                 delegate: Item {
                     width: grid.cellWidth
                     height: grid.cellHeight
+                    // Tile-wide hover (handlers see hover through the child
+                    // MouseAreas) driving the delete affordance's visibility.
+                    HoverHandler { id: tileHover }
                     UCard {
                         anchors.fill: parent
                         anchors.margins: Theme.spacingS
@@ -322,10 +342,41 @@ Window {
                             cursorShape: Qt.PointingHandCursor
                             onClicked: Studio.openProject(modelData.path)
                         }
+                        // Hover-only delete: sits above the open MouseArea so its
+                        // click never falls through to openProject. Confirmation
+                        // is mandatory — this deletes the video file itself.
+                        UIconButton {
+                            anchors.top: parent.top
+                            anchors.right: parent.right
+                            width: 26; height: 26
+                            iconSize: 14
+                            iconName: "window-close"
+                            tooltip: qsTr("Delete recording…")
+                            visible: tileHover.hovered
+                            onClicked: {
+                                deleteDialog.projectPath = modelData.path
+                                deleteDialog.projectName = modelData.name
+                                deleteDialog.open()
+                            }
+                        }
                     }
                 }
             }
         }
+    }
+
+    // Confirm before Studio.deleteRecording — this removes the recording's video
+    // file itself, not just the tile, so the destructive path needs an explicit
+    // click on the danger button (Escape / clicking outside cancels).
+    UConfirmDialog {
+        id: deleteDialog
+        property string projectPath: ""
+        property string projectName: ""
+        title: qsTr("Delete recording?")
+        text: qsTr("\"%1\" will be deleted, including its video file. Both are moved to the trash when available, otherwise removed permanently.").arg(projectName)
+        confirmText: qsTr("Delete")
+        destructive: true
+        onAccepted: Studio.deleteRecording(projectPath)
     }
 
     // Dev-only smoke test: F8 opens the results dialog and runs the sequence.

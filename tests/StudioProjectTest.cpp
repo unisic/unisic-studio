@@ -55,6 +55,10 @@ void StudioProjectTest::saveLoadRoundtripEquality()
     p.setHadClickCapture(true);
     p.setTrimInMs(500);
     p.setTrimOutMs(60000);
+    p.setAudioMuted(true);
+    p.setAudioVolume(1.5);                 // out of range → clamped to 1.0
+    QCOMPARE(p.audioVolume(), 1.0);
+    p.setAudioVolume(0.35);
 
     CursorTrack cur;
     cur.append({0, 100, 200, true, 0});
@@ -67,6 +71,8 @@ void StudioProjectTest::saveLoadRoundtripEquality()
     clk.append({16, Qt::LeftButton, ClickEvent::Down, 110, 205});
     clk.append({40, Qt::LeftButton, ClickEvent::Up, 122, 211});
     p.setClickTrack(clk);
+
+    p.setTypingBursts({{2000, 4200}, {9000, 11500}});
 
     ZoomTimeline::Keyframe k;
     k.tMs = 1000;
@@ -106,8 +112,11 @@ void StudioProjectTest::saveLoadRoundtripEquality()
     QCOMPARE(r->cursorMode(), p.cursorMode());
     QCOMPARE(r->t0MonoNs(), p.t0MonoNs());
     QCOMPARE(r->hadClickCapture(), p.hadClickCapture());
+    QCOMPARE(r->typingBursts(), p.typingBursts());
     QCOMPARE(r->trimInMs(), p.trimInMs());
     QCOMPARE(r->trimOutMs(), p.trimOutMs());
+    QCOMPARE(r->audioMuted(), true);
+    QCOMPARE(r->audioVolume(), 0.35);
 
     // Cursor track.
     QCOMPARE(r->cursorTrack().count(), 3);
@@ -143,6 +152,15 @@ void StudioProjectTest::saveLoadRoundtripEquality()
     // Video resolved via the relative path; nothing missing.
     QCOMPARE(r->videoResolved(), videoPath);
     QCOMPARE(r->videoMissing(), false);
+
+    // Additive clip audio: a project saved before the "audio" object existed
+    // loads with the defaults (unmuted, full volume) — never zeroed.
+    const QString legacyPath = dir.filePath(QStringLiteral("legacy.unisicstudio"));
+    writeFile(legacyPath, QByteArray("{\"schemaVersion\":1,\"video\":{}}"));
+    QScopedPointer<StudioProject> legacy(StudioProject::load(legacyPath));
+    QVERIFY(!legacy.isNull());
+    QCOMPARE(legacy->audioMuted(), false);
+    QCOMPARE(legacy->audioVolume(), 1.0);
 }
 
 void StudioProjectTest::refusesNewerSchema()

@@ -1,13 +1,14 @@
 import QtQuick
 import Unisic.Kit
 
-// On-canvas zoom-target editor. While a zoom keyframe is selected the composition
-// is forced to show the WHOLE source frame (CompositionRoot.editRect), and this
-// overlay draws that keyframe's crop rectangle over it: a draggable body plus 8
-// resize handles, aspect-locked to the OUTPUT aspect, writing the rect back to the
-// model live. Parented into the composition's videoSlot by the editor window
-// (never by the export renderer), so its coordinate space is exactly the source
-// frame [0,1] and it tracks the video card automatically.
+// On-canvas zoom-target editor: a draggable body plus 8 resize handles,
+// aspect-locked to the OUTPUT aspect, writing the keyframe rect back to the
+// model live. Parented into the composition's editorSlot by the editor window
+// (never by the export renderer) — OUTSIDE the camera transform. The region of
+// the source currently on screen is `viewRect` (source-normalized): identity in
+// fit mode (whole frame), a zoomed-out output-aspect context region in fill
+// mode. All box geometry maps source coords through it; with the identity view
+// every formula reduces to the plain [0,1] mapping.
 Item {
     id: editor
 
@@ -19,6 +20,11 @@ Item {
     property real outputAspect: 16 / 9
     property real sourceAspect: 16 / 9
     readonly property real _ratioWH: sourceAspect > 0 ? outputAspect / sourceAspect : 1
+    // The source region the composition is showing (must equal its _effZoom while
+    // editing, or the box lands beside the video it annotates).
+    property rect viewRect: Qt.rect(0, 0, 1, 1)
+    readonly property real _vw: Math.max(0.0001, viewRect.width)
+    readonly property real _vh: Math.max(0.0001, viewRect.height)
 
     readonly property var _kf: (project && index >= 0 && _rev >= 0)
                                ? project.zoom.keyframeAt(index) : null
@@ -114,10 +120,10 @@ Item {
 
     Rectangle {
         id: box
-        x: editor.nx * editor.width
-        y: editor.ny * editor.height
-        width: editor.nw * editor.width
-        height: editor.nh * editor.height
+        x: (editor.nx - editor.viewRect.x) / editor._vw * editor.width
+        y: (editor.ny - editor.viewRect.y) / editor._vh * editor.height
+        width: editor.nw / editor._vw * editor.width
+        height: editor.nh / editor._vh * editor.height
         color: "transparent"
         border.color: Theme.accent
         border.width: 2
@@ -133,8 +139,9 @@ Item {
             onReleased: { editor._dragging = false }
             onPositionChanged: (m) => {
                 if (!pressed) return
-                editor.nx += (m.x - ox) / editor.width
-                editor.ny += (m.y - oy) / editor.height
+                // Pixel delta -> source-normalized delta through the view scale.
+                editor.nx += (m.x - ox) / editor.width * editor._vw
+                editor.ny += (m.y - oy) / editor.height * editor._vh
                 editor.clampRect()
                 editor.commit()
             }
@@ -170,11 +177,13 @@ Item {
                     onReleased: editor._dragging = false
                     onPositionChanged: (m) => {
                         if (!pressed) return
-                        // Pointer position in editor-normalized [0,1] coords.
+                        // Pointer position in SOURCE-normalized coords (through the view).
                         var p = mapToItem(editor, m.x, m.y)
                         editor.resize(parent.modelData,
-                                      p.x / Math.max(1, editor.width),
-                                      p.y / Math.max(1, editor.height))
+                                      p.x / Math.max(1, editor.width) * editor._vw
+                                          + editor.viewRect.x,
+                                      p.y / Math.max(1, editor.height) * editor._vh
+                                          + editor.viewRect.y)
                     }
                 }
             }

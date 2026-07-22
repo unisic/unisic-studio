@@ -17,7 +17,11 @@ class StyleModel : public QObject
 {
     Q_OBJECT
 
-    // color | gradient | wallpaper | desktopBlur
+    // none | color | gradient | wallpaper | desktopBlur
+    // 'none' draws no backdrop at all: the padded video card sits on the editor's
+    // own surface in preview and on the opaque black export clear in the file
+    // (RenderPipeline clears to black; there is no alpha-export path). It is the
+    // "remove background" affordance, not a transparent-export mode.
     Q_PROPERTY(QString backgroundType READ backgroundType WRITE setBackgroundType NOTIFY backgroundTypeChanged)
     Q_PROPERTY(QColor backgroundColor READ backgroundColor WRITE setBackgroundColor NOTIFY backgroundColorChanged)
     Q_PROPERTY(QColor gradientStart READ gradientStart WRITE setGradientStart NOTIFY gradientStartChanged)

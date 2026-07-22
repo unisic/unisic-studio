@@ -28,10 +28,10 @@ PreviewController::PreviewController(StudioProject *project, QObject *parent)
     connect(m_zoom, &ZoomTimeline::motionSmoothnessChanged,
             this, &PreviewController::resetCamera);
 
-    m_timer.setInterval(16); // ~60 Hz smoothing
-    m_timer.setTimerType(Qt::PreciseTimer);
-    connect(&m_timer, &QTimer::timeout, this, &PreviewController::tick);
-
+    // No QTimer here: while playing, the QML FrameAnimation in the editor calls
+    // frameTick() once per rendered frame, so camera/cursor updates are vsync-
+    // locked (a fixed-interval timer beat against the compositor refresh and
+    // showed up as juddery zooms; it also undersampled >60 Hz displays).
     resetCamera();
 }
 
@@ -42,24 +42,36 @@ PreviewController::~PreviewController()
 
 void PreviewController::sync(qint64 positionMs, bool playing)
 {
-    m_anchorMs = qBound<qint64>(0, positionMs, qMax<qint64>(0, m_durationMs));
-    m_elapsed.restart();
-    m_playing = playing;
-    if (playing) {
-        if (!m_timer.isActive())
-            m_timer.start();
-    } else {
-        m_timer.stop();
+    qint64 minimum = 0;
+    qint64 maximum = qMax<qint64>(0, m_durationMs);
+    if (playing && m_project && m_project->trimOutMs() > m_project->trimInMs()) {
+        minimum = qBound<qint64>(0, m_project->trimInMs(), maximum);
+        maximum = qBound<qint64>(minimum, m_project->trimOutMs(), maximum);
     }
+    m_anchorMs = qBound(minimum, positionMs, maximum);
+    m_elapsed.restart();
+    setPlaying(playing);
     setTimeMs(m_anchorMs);
 }
 
 void PreviewController::snap(qint64 positionMs)
 {
-    m_playing = false;
-    m_timer.stop();
+    setPlaying(false);
     m_anchorMs = qBound<qint64>(0, positionMs, qMax<qint64>(0, m_durationMs));
     setTimeMs(m_anchorMs);
+}
+
+void PreviewController::frameTick()
+{
+    tick();
+}
+
+void PreviewController::setPlaying(bool p)
+{
+    if (m_playing == p)
+        return;
+    m_playing = p;
+    emit playingChanged();
 }
 
 void PreviewController::tick()
@@ -71,8 +83,7 @@ void PreviewController::tick()
     if (m_project && m_project->trimOutMs() > m_project->trimInMs())
         playbackEnd = qMin(playbackEnd, m_project->trimOutMs());
     if (playbackEnd > 0 && t >= playbackEnd) {
-        m_playing = false;
-        m_timer.stop();
+        setPlaying(false);
         setTimeMs(playbackEnd);
         emit playbackRangeEnded();
         return;

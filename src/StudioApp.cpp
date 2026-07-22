@@ -14,11 +14,13 @@
 
 #include <QClipboard>
 #include <QCoreApplication>
+#include <QQuickWindow>
 #include <QDBusConnection>
 #include <QDBusConnectionInterface>
 #include <QDesktopServices>
 #include <QDir>
 #include <QElapsedTimer>
+#include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QGuiApplication>
@@ -41,6 +43,10 @@ StudioApp::StudioApp(QObject *parent)
     , m_hud(new HudManager(this, this))
 {
     connect(m_recent, &RecentProjects::changed, this, &StudioApp::recentProjectsChanged);
+    // The recorder writes the token straight to settings after a source pick, so
+    // relay that through the QML-facing property (empty ↔ set flips the Forget row).
+    connect(m_settings, &StudioSettings::screencastRestoreTokenChanged,
+            this, &StudioApp::hasRememberedScreencastSourceChanged);
 
     // Countdown pre-roll owned by the facade (the recorder only arms/commits — the
     // portal dialog and this countdown must never land in the file).
@@ -175,10 +181,97 @@ bool StudioApp::openProject(const QString &pathOrUrl)
     // Seed the auto-camera for a recording that carries a cursor track but no
     // zoom yet (a just-recorded project, or an older file predating the engine).
     generateZoom(p, /*onlyIfEmpty=*/true);
+    // The seed is the deterministic engine's own output, not user work — leaving
+    // it dirty made EVERY close ask "discard changes?" on an untouched project
+    // (and blocked the app from quitting). Reopening regenerates identically.
+    p->clearDirty();
     if (!m_editors->openEditor(p, !capVideoPlayback())) {
         emit notified(tr("Could not open the editor window."), true);
         return false;
     }
+    return true;
+}
+
+// Trash-first delete: recoverable by default, with a hard QFile::remove()
+// fallback for filesystems without a reachable trash dir (FAT sticks, some
+// network mounts). Sets *usedRemove when the fallback actually ran, so the
+// caller can tell the user which fate the files met.
+static bool trashOrRemove(const QString &path, bool *usedRemove)
+{
+    QFile f(path);
+    if (f.moveToTrash())
+        return true;
+    if (f.remove()) {
+        if (usedRemove)
+            *usedRemove = true;
+        return true;
+    }
+    return !QFileInfo::exists(path); // vanished under us → gone is gone
+}
+
+bool StudioApp::deleteRecording(const QString &pathOrUrl)
+{
+    QString path = pathOrUrl;
+    if (path.startsWith(QStringLiteral("file:")))
+        path = QUrl(path).toLocalFile();
+    const QString abs = QFileInfo(path).absoluteFilePath();
+    const QString name = QFileInfo(abs).completeBaseName();
+
+    if (abs.isEmpty())
+        return false;
+    if (!QFileInfo::exists(abs)) {
+        m_recent->remove(abs); // stale tile — nothing on disk to delete
+        return true;
+    }
+    // Deleting the file under an open editor would leave the window (and a
+    // later Ctrl+S) pointing at a ghost — make the user close it first.
+    if (m_editors->hasOpen(abs)) {
+        emit notified(tr("Close the editor window for \"%1\" before deleting it.").arg(name),
+                      true);
+        return false;
+    }
+
+    // Resolve the media the sidecar references. Sidecar↔video is 1:1 in
+    // practice — the recorder names the master (and the webcam clip) after the
+    // project and nothing else points at them; an import references the
+    // user-picked source video, which is exactly why the confirm dialog states
+    // the video file itself is removed. An unreadable sidecar still gets
+    // deleted below; its media (if any) can't be resolved and is left alone.
+    QStringList media;
+    {
+        QString err;
+        QScopedPointer<StudioProject> p(StudioProject::load(abs, &err));
+        if (p) {
+            if (!p->videoResolved().isEmpty())
+                media << p->videoResolved();
+            if (!p->webcamResolved().isEmpty())
+                media << p->webcamResolved();
+        }
+    }
+
+    // Media first, sidecar last: a partial failure then leaves a loadable
+    // project (shown as video-missing) rather than an orphaned video file.
+    bool usedRemove = false;
+    QStringList failed;
+    for (const QString &f : media) {
+        if (!trashOrRemove(f, &usedRemove))
+            failed << f;
+    }
+    const bool sidecarGone = trashOrRemove(abs, &usedRemove);
+    if (!sidecarGone)
+        failed << abs;
+
+    if (sidecarGone)
+        m_recent->remove(abs);
+
+    if (!failed.isEmpty()) {
+        emit notified(tr("Could not delete: %1").arg(failed.join(QStringLiteral(", "))), true);
+        return false;
+    }
+    emit notified(usedRemove
+                      ? tr("Deleted \"%1\" permanently (no trash available here).").arg(name)
+                      : tr("Moved \"%1\" to the trash.").arg(name),
+                  false);
     return true;
 }
 
@@ -398,7 +491,11 @@ void StudioApp::startRecording()
 
 void StudioApp::onRecorderArmed()
 {
-    const int secs = qBound(0, m_settings->recordCountdownSec(), 10);
+    // Upper bound matches the Settings control's range (0..60). They must agree:
+    // the settings row binds to the raw stored value, so a lower clamp here
+    // doesn't correct the display — it just makes the UI state a number the
+    // countdown never honours, permanently and across restarts.
+    const int secs = qBound(0, m_settings->recordCountdownSec(), 60);
     if (secs <= 0) {
         // No pre-roll: commit immediately (state stays Arming until started()).
         m_recorder->commit();
@@ -439,6 +536,51 @@ void StudioApp::cancelRecording()
     setRecorderState(RecIdle);
 }
 
+void StudioApp::setMainWindow(QQuickWindow *win)
+{
+    m_mainWin = win;
+    if (!win)
+        return;
+    // Context object `this`: the connection dies with the facade, and the
+    // QPointer guards the window side.
+    connect(win, &QQuickWindow::visibleChanged, this,
+            [this](bool) { maybeQuitOnAllWindowsClosed(); });
+    connect(m_editors, &EditorWindowManager::openCountChanged, this,
+            &StudioApp::maybeQuitOnAllWindowsClosed);
+}
+
+void StudioApp::showMainWindow()
+{
+    if (!m_mainWin)
+        return;
+    m_mainWin->show();
+    m_mainWin->raise();
+    m_mainWin->requestActivate();
+}
+
+void StudioApp::maybeQuitOnAllWindowsClosed()
+{
+    if (m_recorderState != RecIdle)
+        return;   // recording (window deliberately hidden) — never quit under it
+    if (m_editors->openCount() > 0)
+        return;
+    if (m_mainWin && m_mainWin->isVisible())
+        return;
+    QCoreApplication::quit();
+}
+
+bool StudioApp::hasRememberedScreencastSource() const
+{
+    return !m_settings->screencastRestoreToken().isEmpty();
+}
+
+void StudioApp::forgetScreencastSource()
+{
+    // The setter emits screencastRestoreTokenChanged, which is relayed to the
+    // property's own NOTIFY in the constructor — no explicit emit needed.
+    m_settings->setScreencastRestoreToken(QString());
+}
+
 void StudioApp::refreshInputPermission()
 {
     const int s = int(InputPermission::probe());
@@ -465,6 +607,43 @@ void StudioApp::generateZoom(StudioProject *project, bool onlyIfEmpty)
     if (!project)
         return;
     ZoomTimeline *zoom = project->zoom();
+
+    const QString aspectNow =
+        project->style() ? project->style()->aspect() : QStringLiteral("source");
+
+    // Manual/locked keyframes were framed under the aspect that generated them
+    // (stored as genAspect). Rendering an old-aspect rect through the new
+    // anisotropic camera scale distorts by newAspect/oldAspect, so re-project
+    // each one: recover (center, zoom) under the OLD aspect, re-frame under the
+    // new. Runs ABOVE the empty-cursor early-return (a keyframes-but-no-cursor
+    // project must still re-frame) and skips identity rects (a full-frame reset
+    // must stay a full-frame reset, not become a crop). Batched: one model pulse.
+    const QString genAspect =
+        zoom->autoParams().value(QLatin1String("genAspect")).toString(aspectNow);
+    if (genAspect != aspectNow) {
+        QVector<QPair<int, QRectF>> reprojected;
+        const auto &kfs = zoom->keyframes();
+        for (int i = 0; i < kfs.size(); ++i) {
+            const auto &kf = kfs.at(i);
+            if (kf.source != ZoomTimeline::Manual && !kf.locked)
+                continue;                          // regenerate replaces these anyway
+            const QRectF r = kf.rect;
+            if (std::abs(r.x()) < 1e-6 && std::abs(r.y()) < 1e-6
+                && std::abs(r.width() - 1.0) < 1e-6 && std::abs(r.height() - 1.0) < 1e-6)
+                continue;                          // intentional full-frame reset
+            const double z = KeyframeEngine::zoomOfRect(project->videoSize(), genAspect, r);
+            reprojected.append({i, KeyframeEngine::cameraRect(project->videoSize(), aspectNow,
+                                                              r.center(), z)});
+        }
+        if (!reprojected.isEmpty())
+            zoom->setKeyframeRects(reprojected);
+        // Stamp even when nothing was re-projected, so repeated aspect flips
+        // don't re-project against a stale origin aspect.
+        QJsonObject ap = zoom->autoParams();
+        ap.insert(QLatin1String("genAspect"), aspectNow);
+        zoom->setAutoParams(ap);
+    }
+
     if (project->cursorTrack().isEmpty())
         return;                                   // nothing to derive a camera from
     if (onlyIfEmpty && !zoom->keyframes().isEmpty())
@@ -482,19 +661,24 @@ void StudioApp::generateZoom(StudioProject *project, bool onlyIfEmpty)
         if (kf.source == ZoomTimeline::Manual || kf.locked)
             pinned.append(kf);
 
-    const QString aspect =
-        project->style() ? project->style()->aspect() : QStringLiteral("source");
+    const QString &aspect = aspectNow;            // resolved once, above
 
     QElapsedTimer timer;
     timer.start();
+    const QVector<QPair<qint64, qint64>> typing(project->typingBursts().cbegin(),
+                                                 project->typingBursts().cend());
     const QVector<KeyframeEngine::Keyframe> kfs =
         KeyframeEngine::generate(project->cursorTrack(), project->clickTrack(),
                                  project->videoSize(), project->durationMs(), aspect, params,
-                                 pinned);
+                                 pinned, typing);
     const double genMs = timer.nsecsElapsed() / 1.0e6;
 
     zoom->replaceAutoKeyframes(kfs);               // one reset; keep Manual + locked
-    zoom->setAutoParams(params.toJson());         // persist the params used
+    // Persist the params used + the aspect they were generated under (genAspect
+    // drives the Manual-keyframe re-projection on the next aspect change).
+    QJsonObject usedParams = params.toJson();
+    usedParams.insert(QLatin1String("genAspect"), aspect);
+    zoom->setAutoParams(usedParams);
 
     qInfo("autozoom: %lld keyframes from %lld cursor samples in %.2f ms",
           static_cast<long long>(kfs.size()),

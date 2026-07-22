@@ -96,6 +96,16 @@ Popup {
     function presetChecked(p) {
         return exporter.quality === p.quality && exporter.resolution === p.resolution
     }
+    // True when the current (quality, resolution) pair matches no preset — the user
+    // drove the Advanced fields directly. The chips stay honestly unlit (a lit chip
+    // whose settings the encoder ignores would lie); this drives a quiet "Custom"
+    // hint instead, so the row doesn't read as "nothing selected".
+    readonly property bool customPreset: {
+        for (var i = 0; i < _presets.length; ++i)
+            if (presetChecked(_presets[i]))
+                return false
+        return true
+    }
 
     onOpened: {
         // Start fresh when reopened after a previous run.
@@ -178,17 +188,30 @@ Popup {
             // ---- Quality preset (segmented) ----
             Field {
                 label: qsTr("Quality")
-                Row {
+                Column {
                     width: parent.width
                     spacing: Theme.spacingS
-                    Repeater {
-                        model: root._presets
-                        UFilterChip {
-                            required property var modelData
-                            text: modelData.label
-                            checked: root.presetChecked(modelData)
-                            onClicked: root.applyPreset(modelData)
+                    Row {
+                        width: parent.width
+                        spacing: Theme.spacingS
+                        Repeater {
+                            model: root._presets
+                            UFilterChip {
+                                required property var modelData
+                                text: modelData.label
+                                checked: root.presetChecked(modelData)
+                                onClicked: root.applyPreset(modelData)
+                            }
                         }
+                    }
+                    // No chip matches: say so rather than showing a blank row.
+                    Text {
+                        width: parent.width
+                        visible: root.customPreset
+                        text: qsTr("Custom — set in Advanced below.")
+                        color: Theme.textTertiary
+                        font.pixelSize: Theme.fontS
+                        wrapMode: Text.WordWrap
                     }
                 }
             }

@@ -143,6 +143,8 @@ qt_add_qml_module(unisic-studio
     OUTPUT_DIRECTORY qmlmod/UnisicStudio
     QML_FILES
         qml/StudioMain.qml
+        qml/StudioTitleBar.qml
+        qml/StudioResizeGrips.qml
         qml/SettingsPage.qml
         qml/RecordingHud.qml
         qml/EditorWindow.qml
@@ -281,6 +283,17 @@ if(BUILD_TESTING)
     target_link_libraries(studio_recorder_math_test PRIVATE Qt6::Core Qt6::Gui Qt6::Test)
     target_include_directories(studio_recorder_math_test PRIVATE src/project src/capture)
     add_test(NAME studio_recorder_math_test COMMAND studio_recorder_math_test)
+
+    # Recents index: recordOpened ordering and the remove() API the launcher's
+    # delete-recording action relies on. The kit's ConfigPath.h is header-only,
+    # so an include dir suffices (no kit lib link); QStandardPaths test mode
+    # keeps the index out of the real config dir.
+    qt_add_executable(studio_recent_projects_test
+        tests/RecentProjectsTest.cpp
+        src/RecentProjects.h src/RecentProjects.cpp)
+    target_link_libraries(studio_recent_projects_test PRIVATE Qt6::Core Qt6::Gui Qt6::Test)
+    target_include_directories(studio_recent_projects_test PRIVATE src external/unisic-kit/src)
+    add_test(NAME studio_recent_projects_test COMMAND studio_recent_projects_test)
 endif()
 
 # ---------------------------------------------------------------------------

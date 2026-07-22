@@ -1,6 +1,9 @@
 #pragma once
+#include <QJsonArray>
 #include <QJsonObject>
+#include <QList>
 #include <QObject>
+#include <QPair>
 #include <QSize>
 #include <QString>
 #include <QVariantList>
@@ -51,6 +54,12 @@ class StudioProject : public QObject
 
     Q_PROPERTY(qint64 trimInMs READ trimInMs WRITE setTrimInMs NOTIFY trimChanged)
     Q_PROPERTY(qint64 trimOutMs READ trimOutMs WRITE setTrimOutMs NOTIFY trimChanged)
+
+    // Clip audio (additive to schema 1 — old projects load with the defaults:
+    // unmuted, full volume). Honored by the editor preview AND the export mux,
+    // so what you hear is what ships (WYSIWYG).
+    Q_PROPERTY(bool audioMuted READ audioMuted WRITE setAudioMuted NOTIFY audioChanged)
+    Q_PROPERTY(double audioVolume READ audioVolume WRITE setAudioVolume NOTIFY audioChanged)
 
     Q_PROPERTY(ZoomTimeline *zoom READ zoom CONSTANT)
     Q_PROPERTY(StyleModel *style READ style CONSTANT)
@@ -115,6 +124,12 @@ public:
     void setTrimInMs(qint64 v);
     void setTrimOutMs(qint64 v);
 
+    // --- clip audio ---
+    bool audioMuted() const { return m_audioMuted; }
+    double audioVolume() const { return m_audioVolume; }   // linear gain, clamped 0..1
+    void setAudioMuted(bool v);
+    void setAudioVolume(double v);
+
     // --- tracks (value members; edits should mark dirty via markDirty()) ---
     const CursorTrack &cursorTrack() const { return m_cursor; }
     CursorTrack &cursorTrack() { return m_cursor; }
@@ -123,12 +138,23 @@ public:
     ClickTrack &clickTrack() { return m_clicks; }
     void setClickTrack(const ClickTrack &t) { m_clicks = t; markDirty(); }
 
+    // Coalesced [startMs,endMs] spans of keyboard activity (timing only — never
+    // keycodes). Feeds KeyframeEngine so the camera holds through typing. Empty
+    // unless the user opted into typing capture. Additive; old projects load with
+    // none. Already in video time (pauses excised by the assembler).
+    const QList<QPair<qint64, qint64>> &typingBursts() const { return m_typingBursts; }
+    void setTypingBursts(const QList<QPair<qint64, qint64>> &b) { m_typingBursts = b; markDirty(); }
+
     ZoomTimeline *zoom() const { return m_zoom; }
     StyleModel *style() const { return m_style; }
 
     // Down-event times (ms) for the timeline's click markers. Immutable for a
     // loaded project, so QML can bind it once.
     Q_INVOKABLE QVariantList clickDownTimesMs() const;
+
+    // Typing bursts as {startMs,endMs} maps for the timeline's typing lane.
+    // Immutable for a loaded project, so QML can bind it once.
+    Q_INVOKABLE QVariantList typingBurstRanges() const;
 
     // --- export settings (opaque passthrough for the render layer) ---
     QJsonObject exportSettings() const { return m_exportSettings; }
@@ -138,6 +164,10 @@ public:
     // Call after mutating a value track (or anything not routed through a
     // setter) so unsaved edits are visible to the UI.
     void markDirty();
+    // For system-side mutations that are reproducible, not user work (the
+    // open-path auto-zoom seed): drop the dirty flag so an untouched project
+    // closes without a "discard changes?" prompt.
+    void clearDirty();
 
     // Atomic (QSaveFile) compact-JSON write. Clears dirty on success. On failure
     // returns false and, if error != nullptr, a human-readable reason (tr()'d).
@@ -152,12 +182,14 @@ signals:
     void videoChanged();
     void recordingChanged();
     void trimChanged();
+    void audioChanged();
     void dirtyChanged();
 
 private:
     QJsonObject toJson() const;
+    QJsonArray typingToJson() const;
+    static QList<QPair<qint64, qint64>> typingFromJson(const QJsonArray &a);
     void resolveVideo(const QString &projectFilePath);
-    void clearDirty();
 
     QString m_videoRelPath;
     QString m_videoAbsPath;
@@ -180,8 +212,12 @@ private:
     qint64 m_trimInMs = 0;
     qint64 m_trimOutMs = 0;
 
+    bool m_audioMuted = false;
+    double m_audioVolume = 1.0;
+
     CursorTrack m_cursor;
     ClickTrack m_clicks;
+    QList<QPair<qint64, qint64>> m_typingBursts;
     ZoomTimeline *m_zoom;   // child (parented to this)
     StyleModel *m_style;    // child (parented to this)
     QJsonObject m_exportSettings;

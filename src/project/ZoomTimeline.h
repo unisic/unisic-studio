@@ -2,8 +2,10 @@
 #include <QAbstractListModel>
 #include <QJsonObject>
 #include <QList>
+#include <QPair>
 #include <QRectF>
 #include <QVariantMap>
+#include <QVector>
 
 // The ordered list of zoom/pan keyframes that drive the camera over the video.
 // A keyframe pins a normalized [0,1] viewport rect at a video-ms instant; the
@@ -75,6 +77,13 @@ public:
     Q_INVOKABLE int moveKeyframe(int index, qint64 newT);
 
     Q_INVOKABLE void setKeyframeRect(int index, const QRectF &rect);
+
+    // Batch rect update under ONE changed()/dataChanged pulse (a per-row loop of
+    // setKeyframeRect would recompute the preview N times). System-side use only
+    // (aspect re-projection): unlike setKeyframeRect it does NOT promote rows to
+    // Manual — the caller re-frames rows it already knows are Manual/locked, and
+    // silently converting a locked Auto row would change its regenerate semantics.
+    void setKeyframeRects(const QVector<QPair<int, QRectF>> &updates);
     Q_INVOKABLE void setKeyframeLocked(int index, bool locked);
     Q_INVOKABLE void setKeyframeEasing(int index, int easeInMs, int easeOutMs);
 

@@ -5,8 +5,10 @@ import QtMultimedia
 // ONLY through a Loader gated on Studio.capVideoPlayback, so `import
 // QtMultimedia` is never evaluated when the plugin is absent (the same
 // isolation Unisic uses for its VideoPreview). Exposes the minimal
-// source/position/playing surface the editor transport drives; audio is omitted
-// — the M1 preview is silent (no AudioOutput dependency).
+// source/position/playing surface the editor transport drives. Audio follows
+// the project's clip-audio settings (audioVolume/audioMuted) so the preview is
+// WYSIWYG with the export mux; the guard keeps any instantiation outside the
+// editor window's context (no `editorProject`) safe and silent-by-default.
 Item {
     id: root
 
@@ -26,6 +28,16 @@ Item {
         id: player
         source: root.source
         videoOutput: out
+        // Both instances (master clip AND the webcam-overlay feed) follow the
+        // clip volume — the webcam sidecar carries no meaningful audio, so one
+        // shared setting is acceptable. AudioOutput.volume is linear gain, the
+        // same scale the export's ffmpeg `volume=` filter applies.
+        audioOutput: AudioOutput {
+            muted: (typeof editorProject !== "undefined" && editorProject)
+                   ? editorProject.audioMuted : false
+            volume: (typeof editorProject !== "undefined" && editorProject)
+                    ? editorProject.audioVolume : 1.0
+        }
     }
 
     VideoOutput {

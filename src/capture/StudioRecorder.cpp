@@ -52,6 +52,13 @@ StudioRecorder::StudioRecorder(StudioSettings *settings, QObject *parent)
                 if (m_state == Recording)
                     m_clickRaw.append({tUsec * 1000, button, pressed});
             }, Qt::QueuedConnection);
+    // Key-DOWN timing only (never keycodes) — collected as ns to coalesce into
+    // typing bursts at assembly. Queued: emitted from the poll thread.
+    connect(m_clicks, &ClickCapture::keyActivity, this,
+            [this](qint64 tUsec) {
+                if (m_state == Recording)
+                    m_keyDownRaw.append(tUsec * 1000);
+            }, Qt::QueuedConnection);
 }
 
 StudioRecorder::~StudioRecorder()
@@ -124,6 +131,7 @@ void StudioRecorder::start(bool holdForCommit)
     m_pauseIntervals.clear();
     m_cursorRaw.clear();
     m_clickRaw.clear();
+    m_keyDownRaw.clear();
     m_shapes.clear();
     m_hasAudio = false;
     m_hadClickCapture = false;
@@ -140,16 +148,35 @@ void StudioRecorder::openPortalSession()
 {
     m_session = new ScreenCastSession(this);
     connect(m_session, &ScreenCastSession::ready, this, &StudioRecorder::onStreamReady);
-    connect(m_session, &ScreenCastSession::failed, this, [this](const QString &e) { fail(e); });
+    connect(m_session, &ScreenCastSession::failed, this, [this](const QString &e) {
+        // A revoked or stale token must degrade to the picker, not wedge the
+        // recorder forever. "cancelled" is the user saying no — their token is
+        // still good, so don't punish them for it.
+        if (!m_replayedToken.isEmpty() && e != QLatin1String("cancelled"))
+            m_settings->setScreencastRestoreToken(QString());
+        fail(e);
+    });
     connect(m_session, &ScreenCastSession::sessionClosed, this, [this] {
         if (m_state == Recording)
             stop();                                   // finalize what we have
         else if (m_state == Starting)
             fail(tr("Screen sharing was stopped"));
     });
+    // Remember the portal's source pick so the picker only appears once. The
+    // signal fires unconditionally whenever the portal supports tokens —
+    // including with an empty string when it omits the key — so guard, or a
+    // good token gets erased and the picker is back every launch.
+    connect(m_session, &ScreenCastSession::restoreTokenChanged, this,
+            [this](const QString &token) {
+                if (!token.isEmpty())
+                    m_settings->setScreencastRestoreToken(token);
+            });
     // Metadata cursor (re-rendered from the track, never baked into the frames);
     // MONITOR|WINDOW so the portal picker offers a monitor OR a single window.
-    m_session->start(ScreenCastSession::CursorMode::Metadata, 3u);
+    // The stored token replays last time's pick; an empty/stale one just means
+    // the portal asks again.
+    m_replayedToken = m_settings->screencastRestoreToken();
+    m_session->start(ScreenCastSession::CursorMode::Metadata, 3u, m_replayedToken);
 }
 
 void StudioRecorder::onStreamReady(int fd, uint nodeId, const QSize &, const QPoint &)
@@ -368,11 +395,17 @@ void StudioRecorder::beginEncoding(const QSize &streamSize)
 #endif
     m_cursorDrain.start();
 
+    // The libinput thread is shared by click and typing capture, so start it when
+    // EITHER is enabled — a typing-only user still needs it running. Key capture
+    // is off in the thread unless typing zoom is explicitly consented to.
     m_hadClickCapture = false;
-    if (m_settings->clickCaptureEnabled()
+    const bool wantClicks = m_settings->clickCaptureEnabled();
+    const bool wantTyping = m_settings->typingZoomEnabled();
+    if ((wantClicks || wantTyping)
         && InputPermission::probe() == InputPermission::Available) {
+        m_clicks->setCaptureKeys(wantTyping);
         m_clicks->start();
-        m_hadClickCapture = m_clicks->isRunning();
+        m_hadClickCapture = wantClicks && m_clicks->isRunning();
     }
 
     const int maxSec = m_settings->recordMaxDurationSec();
@@ -683,6 +716,7 @@ void StudioRecorder::finalize()
     RecordingAssembler::Input in;
     in.cursors = m_cursorRaw;
     in.clicks = m_clickRaw;
+    in.keyDownMonoNs = m_keyDownRaw;
     in.shapes = m_shapes;
     in.pauseMonoNs = m_pauseIntervals;
     in.t0MonoNs = m_t0MonoNs;
@@ -801,6 +835,7 @@ void StudioRecorder::cleanup()
     m_pauseIntervals.clear();
     m_cursorRaw.clear();
     m_clickRaw.clear();
+    m_keyDownRaw.clear();
     m_shapes.clear();
     m_lastFrame.clear();
     m_lastSampledSeq = 0;
