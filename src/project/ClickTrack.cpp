@@ -85,6 +85,10 @@ ClickTrack ClickTrack::fromJson(const QJsonArray &a)
                       : ClickEvent::Down;
         e.x = o.value(QStringLiteral("x")).toDouble();
         e.y = o.value(QStringLiteral("y")).toDouble();
+        // Same monotonicity contract append() enforces at record time — a
+        // corrupt file must not smuggle out-of-order events past it.
+        if (!t.m_events.isEmpty() && e.tMs < t.m_events.constLast().tMs)
+            e.tMs = t.m_events.constLast().tMs;
         t.m_events.append(e);
     }
     return t;

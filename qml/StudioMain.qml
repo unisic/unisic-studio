@@ -12,17 +12,25 @@ import UnisicStudio
 // qsTr(); every color comes from a Theme token; every control is a kit component.
 Window {
     id: window
-    width: 1280
-    height: 800
+    // Restore the last windowed size (the settings exist for exactly this; a
+    // user resize overwrites the binding, which is the intended one-shot use).
+    width: Studio.settings.windowWidth
+    height: Studio.settings.windowHeight
     minimumWidth: 1000
     minimumHeight: 640
     visible: true
     title: qsTr("Unisic Studio")
     color: Theme.backgroundDeep
 
+<<<<<<< HEAD
     // Frameless with the shared hand-built chrome (same as EditorWindow), so the
     // app never shows system decorations. Content anchors below titleBar.bottom.
     flags: Qt.Window | Qt.FramelessWindowHint
+=======
+    // Persist plain windowed resizes only — never a maximized/fullscreen size.
+    onWidthChanged: if (visibility === Window.Windowed) Studio.settings.windowWidth = width
+    onHeightChanged: if (visibility === Window.Windowed) Studio.settings.windowHeight = height
+>>>>>>> 14d89856a8754caa94ca67cdbe9fa6f8da48f97e
 
     property int currentPage: 0
 

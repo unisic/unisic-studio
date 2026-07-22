@@ -7,6 +7,7 @@
 #include "media/FfmpegUtil.h"
 #include "project/StyleModel.h"
 
+#include <QCoreApplication>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -118,6 +119,7 @@ void RenderPipeline::start(const Settings &settings)
     m_active = true;
     m_canceled = false;
     m_finishing = false;
+    m_wroteOutput = false;
 
     QString err;
     if (!buildScene(&err)) {
@@ -129,6 +131,19 @@ void RenderPipeline::start(const Settings &settings)
     // the composition's video-slot size before the first real frame is composed.
     renderOneFrameGeometry();
     renderOneFrameGeometry();
+
+    // The wallpaper/desktopBlur backgrounds decode on Qt's image thread
+    // (asynchronous: true) — without this bounded wait the first exported
+    // frames render before the image lands and the clip opens on the flat
+    // fill colour. User input is excluded; 3 s cap keeps a broken image
+    // file from hanging the export start.
+    if (m_root && !m_root->property("backgroundReady").toBool()) {
+        QElapsedTimer bgWait;
+        bgWait.start();
+        while (bgWait.elapsed() < 3000 && !m_root->property("backgroundReady").toBool())
+            QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents, 20);
+        renderOneFrameGeometry(); // once more with the loaded image
+    }
 
     startEncoder();
     if (!m_active) // startEncoder failed and already called fail()
@@ -210,10 +225,17 @@ bool RenderPipeline::buildScene(QString *error)
                                QStringLiteral("error"), QStringLiteral("-ss"), ss,
                                QStringLiteral("-i"), m_s.master, QStringLiteral("-frames:v"),
                                QStringLiteral("1"), m_posterTemp});
-            if (poster.waitForFinished(5000) && QFile::exists(m_posterTemp))
+            if (poster.waitForFinished(5000) && QFile::exists(m_posterTemp)) {
                 m_root->setProperty("posterSource", QUrl::fromLocalFile(m_posterTemp).toString());
-            else
-                m_posterTemp.clear(); // extraction failed → composition falls back to fill colour
+            } else {
+                // Timeout: reap the straggler and remove any partial PNG —
+                // clearing the path alone would leak the temp (teardownScene
+                // only deletes what m_posterTemp still names).
+                poster.kill();
+                poster.waitForFinished(1000);
+                QFile::remove(m_posterTemp);
+                m_posterTemp.clear(); // composition falls back to fill colour
+            }
         }
     }
 
@@ -249,8 +271,12 @@ bool RenderPipeline::buildScene(QString *error)
     syncSize();
 
     if (!m_rc->initialize()) {
-        *error = tr("Offscreen GPU rendering could not be initialized on this system. "
-                    "Try again with the environment variable QT_QUICK_BACKEND=software.");
+        // Do NOT suggest QT_QUICK_BACKEND=software here: this pipeline is
+        // hard-wired to OpenGL (FBO + fromOpenGLContext) and the software
+        // backend cannot render QtQuick.Effects — that advice can never work.
+        *error = tr("Offscreen GPU rendering could not be initialized. Exporting "
+                    "needs a working OpenGL session (a running desktop with GPU "
+                    "drivers); it is not available over a headless connection.");
         return false;
     }
 
@@ -286,7 +312,11 @@ void RenderPipeline::startEncoder()
 
     QStringList args;
     // Common raw-pipe input header (the composed BGRA frames from the renderer).
-    args << QStringLiteral("-y") << QStringLiteral("-f") << QStringLiteral("rawvideo")
+    // -nostats/-loglevel error: without them ffmpeg's per-frame stats accumulate
+    // unread in the QProcess stderr buffer for the whole export (real errors
+    // still come through for the failure message).
+    args << QStringLiteral("-y") << QStringLiteral("-nostats") << QStringLiteral("-loglevel")
+         << QStringLiteral("error") << QStringLiteral("-f") << QStringLiteral("rawvideo")
          << QStringLiteral("-pix_fmt") << QStringLiteral("bgra") << QStringLiteral("-video_size")
          << QStringLiteral("%1x%2").arg(m_s.outW).arg(m_s.outH) << QStringLiteral("-framerate")
          << QString::number(m_s.fps) << QStringLiteral("-i") << QStringLiteral("pipe:0");
@@ -324,6 +354,7 @@ void RenderPipeline::startEncoder()
         else
             args << QStringLiteral("-c:a") << QStringLiteral("aac") << QStringLiteral("-b:a")
                  << QStringLiteral("192k");
+<<<<<<< HEAD
         // Clip volume < 1 → linear gain on the (re-encoded anyway) audio. The
         // same scale the preview's AudioOutput.volume applies. A no-op when the
         // optional 1:a:0? map matched nothing (per-stream filters need a stream).
@@ -331,6 +362,12 @@ void RenderPipeline::startEncoder()
             args << QStringLiteral("-af")
                  << QStringLiteral("volume=%1").arg(QString::number(m_s.audioVolume, 'f', 4));
         args << QStringLiteral("-shortest") << m_s.outputPath;
+=======
+        // No -shortest: both streams are already bounded (-ss/-t on the master,
+        // the pipe delivers exactly durMs*fps frames) — with it, a master whose
+        // audio track is shorter than the video would truncate the whole export.
+        args << m_s.outputPath;
+>>>>>>> 14d89856a8754caa94ca67cdbe9fa6f8da48f97e
     }
 
     m_encoder = new QProcess;
@@ -356,10 +393,22 @@ void RenderPipeline::startEncoder()
     });
 
     m_encoder->start(exe, args, QIODevice::ReadWrite);
+    // errorOccurred(FailedToStart) fires synchronously from inside start() when
+    // the exe is missing → the lambda runs fail() → stopProcess() NULLS
+    // m_encoder. Never touch it unguarded after start().
+    if (!m_encoder)
+        return;
     if (!m_encoder->waitForStarted(5000)) {
         const QString reason = m_encoder->errorString();
         fail(tr("Could not start the encoder: %1").arg(reason));
+        return;
     }
+    // Direct-encode formats: ffmpeg -y truncates the destination the moment it
+    // starts — from here on an abort really does leave a partial file that
+    // deletePartialOutput() must clean. GIF never sets this: its destination is
+    // only ever created by moveIntoPlace() on success, so abort cleanup must
+    // not touch a pre-existing file there.
+    m_wroteOutput = !isGif();
 }
 
 void RenderPipeline::onFrame(int index, const QImage &frame)
@@ -452,6 +501,7 @@ void RenderPipeline::onDecodeFinished(int frameCount)
 
 void RenderPipeline::startGifPalettegen()
 {
+    emit finalizing();
     // Pass 1: read the lossless intermediate, write an optimal 256-colour palette
     // PNG. stats_mode scales with quality (see FfmpegUtil::gifPaletteGenFilter).
     const QString exe = FrameDecoder::ffmpegPath();
@@ -633,6 +683,11 @@ void RenderPipeline::cancel()
 
 void RenderPipeline::deletePartialOutput()
 {
+    // Only delete what THIS run actually wrote. A GIF abort (or any failure
+    // before the encoder started) would otherwise destroy the user's previous
+    // export sitting at the same date-stamped destination path.
+    if (!m_wroteOutput)
+        return;
     if (!m_s.outputPath.isEmpty() && QFile::exists(m_s.outputPath))
         QFile::remove(m_s.outputPath);
 }

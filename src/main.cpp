@@ -150,11 +150,22 @@ int main(int argc, char *argv[])
         }
     }
 
+    // Dev/CI aid flags drive a scripted run to completion and exit — forwarding
+    // them to a live instance as a bare "raise" (the old behaviour) silently
+    // exited 0 with NO work done, which reads as a fake pass in CI. They opt out
+    // of single-instance entirely, like the motion tests.
+    const bool devAidMode = arguments.contains(QStringLiteral("--import"))
+                            || arguments.contains(QStringLiteral("--export-test"))
+                            || arguments.contains(QStringLiteral("--smoke-test"))
+                            || arguments.contains(QStringLiteral("--hud-test"))
+                            || arguments.contains(QStringLiteral("--page"));
+
     // Single instance: a second launch forwards "raise" (or "open <path>") and
     // exits, so only one process ever writes the config file. Only the genuinely
     // environmental no-peer case falls through to a fresh instance.
     const QString serverName = singleInstanceServerName();
     auto *server = new QLocalServer(&app);
+<<<<<<< HEAD
     // `--stop` is a control ping, not a launch: forward "stop" to the running
     // instance so it ends any live recording, then exit. Wayland has no reliable
     // global key grab for an unfocused app (the portal GlobalShortcuts backend on
@@ -178,15 +189,23 @@ int main(int argc, char *argv[])
         return 0;
     }
     if (!isolatedMotionTest) {
+=======
+    if (!isolatedMotionTest && !devAidMode) {
+>>>>>>> 14d89856a8754caa94ca67cdbe9fa6f8da48f97e
         if (notifyExistingInstance(serverName, fileToOpen))
             return 0;
-        QLocalServer::removeServer(serverName); // clear a stale socket left by a crash
+        // listen() FIRST, without removing the socket: an unconditional
+        // removeServer() here could unlink a LIVE peer's socket when two
+        // launches race between the probe and listen(), splitting the app into
+        // duplicate config writers. Only after a failed listen AND a failed
+        // connect (peer truly dead) is the socket provably stale.
         if (!server->listen(serverName)) {
-            // A live peer may have taken the name between our probe and listen() —
-            // hand off rather than boot a duplicate config writer.
             if (notifyExistingInstance(serverName, fileToOpen))
                 return 0;
-            qWarning() << "Could not create single-instance server:" << server->errorString();
+            QLocalServer::removeServer(serverName); // stale socket left by a crash
+            if (!server->listen(serverName))
+                qWarning() << "Could not create single-instance server:"
+                           << server->errorString();
         }
         QObject::connect(&app, &QCoreApplication::aboutToQuit, &app,
                          [serverName] { QLocalServer::removeServer(serverName); });
@@ -317,9 +336,24 @@ int main(int argc, char *argv[])
         const QStringList args = app.arguments();
         const int idx = args.indexOf(QStringLiteral("--import"));
         const bool selftest = args.contains(QStringLiteral("--selftest"));
+        if (idx >= 0 && idx + 1 >= args.size()) {
+            fprintf(stderr, "--import needs a video file argument.\n");
+            return 2;
+        }
         if (idx >= 0 && idx + 1 < args.size()) {
             const QString file = args.at(idx + 1);
             if (selftest) {
+                // A failed import surfaces only as a notified(…, error=true)
+                // toast — without this hook the selftest would sit in the event
+                // loop forever instead of reporting the failure.
+                QObject::connect(&studio, &StudioApp::notified, &app,
+                                 [](const QString &message, bool error) {
+                    if (!error)
+                        return;
+                    fprintf(stderr, "selftest: FAILED: %s\n", qPrintable(message));
+                    fflush(stderr);
+                    QCoreApplication::exit(2);
+                });
                 QObject::connect(&studio, &StudioApp::imported, &app, [&studio](StudioProject *p) {
                     // Exercise the REAL facade save path (default projects dir +
                     // portable relPath + recents index), then reload from the

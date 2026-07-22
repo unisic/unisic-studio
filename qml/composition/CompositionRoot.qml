@@ -47,6 +47,13 @@ Item {
     // the anisotropic zoom scale). The export renderer never parents into it.
     readonly property alias editorSlot: videoRegion
 
+    // Export sync point: the background images decode asynchronously; the
+    // offscreen renderer polls this before composing frame 0 so the clip does
+    // not open on a missing wallpaper/blur (Error/Null count as "done").
+    readonly property bool backgroundReady:
+        (_bgType !== "wallpaper" || _wallpaper === "" || wallpaperImg.status !== Image.Loading)
+        && (_bgType !== "desktopBlur" || !_hasPoster || blurPoster.status !== Image.Loading)
+
     // ---- Style accessors (safe fallbacks while styleModel is null) ----------
     readonly property string _bgType:        styleModel ? styleModel.backgroundType : "gradient"
     readonly property color  _bgColor:       styleModel ? styleModel.backgroundColor : "#17153B"
@@ -172,6 +179,7 @@ Item {
             }
         }
         Image {                                         // wallpaper (cover-crop)
+            id: wallpaperImg
             anchors.fill: parent
             visible: root._bgType === "wallpaper" && root._wallpaper !== ""
             source: root._wallpaper === "" ? ""

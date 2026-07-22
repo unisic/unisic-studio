@@ -68,7 +68,10 @@ private:
     StudioProject *m_project = nullptr;
     CursorPlayback *m_cursor = nullptr;
     QString m_projectId;
-    qint64 m_durationMs = 0;
+    // Live, not cached at construction: the async probe can deliver the real
+    // duration AFTER the editor (and this controller) is built — a snapshot
+    // would clamp the playhead to the stale value (0 for duration-less imports).
+    qint64 durationMs() const;
 
     QElapsedTimer m_elapsed;
     bool m_playing = false;

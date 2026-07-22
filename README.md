@@ -1,3 +1,6 @@
+> [!CAUTION]
+> This app is very experimental; it is not even in alpha. Use wisely 
+
 # Unisic Studio
 
 Unisic Studio is a **Screen Studio-like post-production tool for screen
@@ -69,7 +72,7 @@ Requires **C++20**, **Qt 6.5+**, **CMake** (Ninja recommended). unisic-kit is a
 git submodule, so clone recursively:
 
 ```sh
-git clone --recurse-submodules <repo-url>
+git clone --recurse-submodules https://github.com/unisic/unisic-studio
 cd unisic-studio
 cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build

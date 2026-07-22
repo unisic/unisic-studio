@@ -50,9 +50,6 @@ public:
         int zoomInMs = 650;                // full -> zoomed transition duration
         int zoomOutMs = 1100;              // zoomed -> full transition duration
         int minHoldMs = 1200;              // min time held at full zoom per span
-        // --- idle / return-to-full ---
-        int idleAfterMs = 2500;            // sub-threshold speed this long -> zoom out
-        double idleSpeedFracPerSec = 0.02; // speed threshold, width-fraction / s
         // --- zoom geometry ---
         double zoomMin = 1.45;             // gentlest zoom (linear scale vs full)
         double zoomMax = 2.45;             // premium default cap; intensity can reach 2.55

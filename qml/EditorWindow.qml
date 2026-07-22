@@ -34,10 +34,16 @@ Window {
         ? (editorProject.videoResolved !== "" ? editorProject.videoResolved
                                                : editorProject.videoAbsPath)
         : ""
-    readonly property string videoUrl: videoPath === "" ? "" : "file://" + encodeURI(videoPath)
+    // encodeURI leaves '#' and '?' alone — in a file URL they become fragment/
+    // query markers and the player then loads a truncated path. Escape them.
+    function fileUrl(p) {
+        return p === "" ? ""
+             : "file://" + encodeURI(p).replace(/#/g, "%23").replace(/\?/g, "%3F")
+    }
+    readonly property string videoUrl: fileUrl(videoPath)
     // Optional webcam sidecar (composited as a corner overlay in the preview).
     readonly property string webcamUrl: (editorProject && editorProject.hasWebcam)
-        ? "file://" + encodeURI(editorProject.webcamResolved) : ""
+        ? fileUrl(editorProject.webcamResolved) : ""
 
     function baseName(p) {
         if (!p) return ""
@@ -83,6 +89,11 @@ Window {
     // True while a text field owns focus — the character/navigation shortcuts stand
     // down so typing a frame title or export filename isn't hijacked by Space/K/etc.
     readonly property bool typingText: activeFocusItem instanceof TextInput
+    // Editing shortcuts stand down while any modal popup is up — a window-scope
+    // Shortcut still fires behind an open Popup (Space would toggle playback
+    // under the export dialog, Esc-deselect would preempt CloseOnEscape).
+    readonly property bool modalOpen: exportDialog.opened || shortcutsPopup.opened
+                                      || discardDlg.opened || abortExportDlg.opened
 
     function stepBy(ms) { seekTo(Math.max(0, Math.min(curDur, headMs + ms))) }
 
@@ -307,54 +318,59 @@ Window {
     }
     Shortcut {
         sequence: "Space"
-        enabled: !editorWindow.typingText
+        enabled: !editorWindow.typingText && !editorWindow.modalOpen
         onActivated: editorWindow.playPause()
     }
     Shortcut {
         sequence: "Left"
-        enabled: !editorWindow.typingText
+        enabled: !editorWindow.typingText && !editorWindow.modalOpen
         onActivated: editorWindow.stepBy(-editorWindow.frameStepMs)
     }
     Shortcut {
         sequence: "Right"
-        enabled: !editorWindow.typingText
+        enabled: !editorWindow.typingText && !editorWindow.modalOpen
         onActivated: editorWindow.stepBy(editorWindow.frameStepMs)
     }
     Shortcut {
         sequence: "Shift+Left"
-        enabled: !editorWindow.typingText
+        enabled: !editorWindow.typingText && !editorWindow.modalOpen
         onActivated: editorWindow.stepBy(-1000)
     }
     Shortcut {
         sequence: "Shift+Right"
-        enabled: !editorWindow.typingText
+        enabled: !editorWindow.typingText && !editorWindow.modalOpen
         onActivated: editorWindow.stepBy(1000)
     }
     Shortcut {
         sequence: "Home"
-        enabled: !editorWindow.typingText
+        enabled: !editorWindow.typingText && !editorWindow.modalOpen
         onActivated: editorWindow.seekTo(editorWindow.trimInMs)
     }
     Shortcut {
         sequence: "End"
-        enabled: !editorWindow.typingText
+        enabled: !editorWindow.typingText && !editorWindow.modalOpen
         onActivated: editorWindow.seekTo(editorWindow.trimOutMs)
     }
     Shortcut {
         sequences: [StandardKey.Delete, StandardKey.Backspace]
-        enabled: !editorWindow.typingText && editorWindow.selectedKeyframe >= 0
+        enabled: !editorWindow.typingText && !editorWindow.modalOpen && editorWindow.selectedKeyframe >= 0
         onActivated: editorWindow.deleteSelectedKeyframe()
     }
     Shortcut {
         sequence: "K"
-        enabled: !editorWindow.typingText && editorProject !== null
+        enabled: !editorWindow.typingText && !editorWindow.modalOpen && editorProject !== null
         onActivated: editorWindow.addZoomAtHead()
     }
     Shortcut { // Esc deselects the current keyframe (dialogs handle their own Esc).
+<<<<<<< HEAD
         // Explicit "Escape" alongside StandardKey.Cancel: the platform theme may
         // leave Cancel unbound, and this is the primary way OUT of edit mode.
         sequences: [StandardKey.Cancel, "Escape"]
         enabled: editorWindow.selectedKeyframe >= 0
+=======
+        sequence: StandardKey.Cancel
+        enabled: !editorWindow.modalOpen && editorWindow.selectedKeyframe >= 0
+>>>>>>> 14d89856a8754caa94ca67cdbe9fa6f8da48f97e
         onActivated: editorWindow.selectedKeyframe = -1
     }
     Shortcut { // Ctrl+E opens the export dialog.
@@ -368,6 +384,13 @@ Window {
     }
 
     onClosing: (close) => {
+        // Closing tears down the export dialog's ExportController — a running
+        // export would be silently killed and its partial output deleted.
+        if (exportDialog.running && !confirmedClose) {
+            close.accepted = false
+            abortExportDlg.open()
+            return
+        }
         if (editorProject && editorProject.dirty && !confirmedClose) {
             close.accepted = false
             discardDlg.open()
@@ -598,8 +621,16 @@ Window {
                     project: editorProject
                     index: editorWindow.selectedKeyframe
                     sourceAspect: editorWindow.srcAspect
+<<<<<<< HEAD
                     outputAspect: editorWindow.outputAspect
                     viewRect: comp._effZoom
+=======
+                    // Rects render stretched into the video region: output-aspect
+                    // in fill mode, source-aspect in fit (letterbox) mode.
+                    outputAspect: (editorProject && editorProject.style
+                                   && editorProject.style.fillMode === "fit")
+                                  ? editorWindow.srcAspect : editorWindow.outputAspect
+>>>>>>> 14d89856a8754caa94ca67cdbe9fa6f8da48f97e
                     onDeselectRequested: editorWindow.selectedKeyframe = -1
                 }
             }
@@ -873,6 +904,17 @@ Window {
         text: qsTr("Your changes will be lost. Save first with Ctrl+S.")
         confirmText: qsTr("Discard")
         cancelText: qsTr("Keep editing")
+        destructive: true
+        onAccepted: { editorWindow.confirmedClose = true; editorWindow.close() }
+    }
+
+    UConfirmDialog {
+        id: abortExportDlg
+        title: qsTr("Stop the export?")
+        text: qsTr("An export is still running. Closing this window will cancel it "
+                   + "and discard the partial file.")
+        confirmText: qsTr("Stop export")
+        cancelText: qsTr("Keep exporting")
         destructive: true
         onAccepted: { editorWindow.confirmedClose = true; editorWindow.close() }
     }

@@ -115,8 +115,13 @@ void ExportController::setOutputPath(const QString &v)
 
 void ExportController::setState(State s)
 {
-    if (m_state == s)
+    if (m_state == s) {
+        // errorString's NOTIFY is stateChanged: a second validation failure in
+        // a row (Error → Error) must still push the NEW message to the dialog.
+        if (s == Error)
+            emit stateChanged();
         return;
+    }
     m_state = s;
     emit stateChanged();
 }
@@ -269,6 +274,7 @@ void ExportController::start(StudioProject *project)
     s.projectId = QString::number(quintptr(project), 16);
 
     m_progress = 0.0;
+    m_finalizing = false;
     m_framesDone = 0;
     m_totalFrames = 0;
     m_etaMs = 0;
@@ -276,6 +282,10 @@ void ExportController::start(StudioProject *project)
 
     delete m_pipeline; // any prior run's object
     m_pipeline = new RenderPipeline(this);
+    connect(m_pipeline, &RenderPipeline::finalizing, this, [this] {
+        m_finalizing = true;
+        emit progressChanged();
+    });
     connect(m_pipeline, &RenderPipeline::progress, this,
             [this](int done, int total, qint64 eta) {
                 m_framesDone = done;
@@ -309,6 +319,7 @@ void ExportController::reset()
         return;
     m_error.clear();
     m_progress = 0.0;
+    m_finalizing = false;
     m_framesDone = 0;
     m_totalFrames = 0;
     m_etaMs = 0;

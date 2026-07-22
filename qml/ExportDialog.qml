@@ -50,6 +50,17 @@ Popup {
 
     ExportController { id: exporter }
 
+    UConfirmDialog {
+        id: overwriteDialog
+        title: qsTr("Replace existing file?")
+        text: qsTr("“%1” already exists and will be replaced.")
+              .arg(exporter.outputPath.split("/").pop())
+        confirmText: qsTr("Replace")
+        cancelText: qsTr("Cancel")
+        destructive: true
+        onAccepted: if (root.project) exporter.start(root.project)
+    }
+
     // Index maps between the model's string enums and the combo rows.
     readonly property var _formats: ["mp4", "webm", "gif"]
     readonly property var _resolutions: ["source", "1080p", "720p", "custom"]
@@ -120,10 +131,17 @@ Popup {
         applyDest()
     }
 
-    // Keep the destination extension in lockstep with the format.
+    // Keep the destination extension in lockstep with the format, and coerce a
+    // stale "60 fps" choice when switching to GIF (whose combo drops that row —
+    // the controller would cap it at export anyway, but the combo would show
+    // "Source" while the controller still said "60").
     Connections {
         target: exporter
-        function onFormatChanged() { root.applyDest() }
+        function onFormatChanged() {
+            if (root.isGif && exporter.fpsMode === "60")
+                exporter.fpsMode = "30"
+            root.applyDest()
+        }
     }
 
     // A labelled column wrapper for a control.
@@ -150,6 +168,7 @@ Popup {
         Text {
             width: parent.width
             text: root.done ? qsTr("Export complete")
+                 : root.running && exporter.finalizing ? qsTr("Finishing…")
                  : root.running ? qsTr("Exporting…")
                  : qsTr("Export video")
             color: Theme.textPrimary
@@ -420,8 +439,12 @@ Popup {
                 }
                 Text {
                     anchors.right: parent.right
-                    // ETA while running (once we have a rate); frame count otherwise.
-                    text: root.running && exporter.etaMs > 0
+                    // GIF palette passes: no per-frame progress, the ETA is stale.
+                    // Otherwise ETA while running (once we have a rate); frame
+                    // count as the fallback.
+                    text: exporter.finalizing && root.running
+                          ? qsTr("writing GIF…")
+                          : root.running && exporter.etaMs > 0
                           ? qsTr("about %1 left").arg(root.mmss(exporter.etaMs))
                           : (exporter.totalFrames > 0 && root.running
                              ? qsTr("%1 / %2 frames").arg(exporter.framesDone).arg(exporter.totalFrames)
@@ -453,7 +476,16 @@ Popup {
                 text: qsTr("Export")
                 variant: "filled"
                 enabled: exporter.outputPath !== "" && root.project !== null
-                onClicked: if (root.project) exporter.start(root.project)
+                onClicked: {
+                    if (!root.project)
+                        return
+                    // The date-stamped default filename collides on same-day
+                    // re-exports — never silently clobber the earlier file.
+                    if (Studio.fileExists(exporter.outputPath))
+                        overwriteDialog.open()
+                    else
+                        exporter.start(root.project)
+                }
             }
             UButton {
                 anchors.horizontalCenter: parent.horizontalCenter

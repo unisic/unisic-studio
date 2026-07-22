@@ -365,6 +365,14 @@ if(BUILD_TESTING)
     add_test(NAME studio_preview_controller_test COMMAND studio_preview_controller_test)
 endif()
 
+# A dev-identity binary (own app name/config/socket) must never ship under the
+# stable desktop file: `cmake --install`/cpack of a default local build would.
+# Packagers configure with -DUNISIC_DEV_BUILD=OFF.
+if(UNISIC_DEV_BUILD)
+    install(CODE "message(WARNING \"Installing a UNISIC_DEV_BUILD=ON binary: it runs \
+under the dev identity (unisic-studio-dev config/socket) while the installed desktop \
+file advertises the stable app. Reconfigure with -DUNISIC_DEV_BUILD=OFF for packaging.\")")
+endif()
 install(TARGETS unisic-studio RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(FILES resources/app.unisic.UnisicStudio.desktop
     DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)

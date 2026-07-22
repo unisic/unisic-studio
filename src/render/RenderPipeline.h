@@ -105,6 +105,9 @@ public:
 
 signals:
     void progress(int framesDone, int totalEstimate, qint64 etaMs);
+    // GIF only: all frames are encoded, the palette passes are running. The UI
+    // should show "finishing" instead of a frozen ~100% "Exporting…" bar.
+    void finalizing();
     void motionSampled(int frameIndex, qint64 timeMs, const QRectF &cameraRect,
                        const QPointF &cursorPosition, bool cursorVisible);
     void finished();
@@ -140,6 +143,7 @@ private:
     bool m_active = false;
     bool m_canceled = false;
     bool m_finishing = false;          // decoder done; draining encoder
+    bool m_wroteOutput = false;        // THIS run created/truncated outputPath
     QElapsedTimer m_clock;
 
     // Render-control stack (owned; destroyed in teardownScene()).

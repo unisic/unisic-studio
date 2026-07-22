@@ -10,7 +10,6 @@ PreviewController::PreviewController(StudioProject *project, QObject *parent)
     , m_zoom(project->zoom())
     , m_project(project)
     , m_projectId(QString::number(quintptr(project), 16))
-    , m_durationMs(project->durationMs())
 {
     m_cursor = new CursorPlayback(m_projectId, this);
     m_cursor->setTracks(project->cursorTrack(), project->clickTrack(), project->videoSize());
@@ -40,13 +39,29 @@ PreviewController::~PreviewController()
     CursorShapeProvider::releaseProject(m_projectId);
 }
 
+qint64 PreviewController::durationMs() const
+{
+    return m_project ? m_project->durationMs() : 0;
+}
+
 void PreviewController::sync(qint64 positionMs, bool playing)
 {
+<<<<<<< HEAD
     qint64 minimum = 0;
     qint64 maximum = qMax<qint64>(0, m_durationMs);
     if (playing && m_project && m_project->trimOutMs() > m_project->trimInMs()) {
         minimum = qBound<qint64>(0, m_project->trimInMs(), maximum);
         maximum = qBound<qint64>(minimum, m_project->trimOutMs(), maximum);
+=======
+    m_anchorMs = qBound<qint64>(0, positionMs, qMax<qint64>(0, durationMs()));
+    m_elapsed.restart();
+    m_playing = playing;
+    if (playing) {
+        if (!m_timer.isActive())
+            m_timer.start();
+    } else {
+        m_timer.stop();
+>>>>>>> 14d89856a8754caa94ca67cdbe9fa6f8da48f97e
     }
     m_anchorMs = qBound(minimum, positionMs, maximum);
     m_elapsed.restart();
@@ -56,8 +71,14 @@ void PreviewController::sync(qint64 positionMs, bool playing)
 
 void PreviewController::snap(qint64 positionMs)
 {
+<<<<<<< HEAD
     setPlaying(false);
     m_anchorMs = qBound<qint64>(0, positionMs, qMax<qint64>(0, m_durationMs));
+=======
+    m_playing = false;
+    m_timer.stop();
+    m_anchorMs = qBound<qint64>(0, positionMs, qMax<qint64>(0, durationMs()));
+>>>>>>> 14d89856a8754caa94ca67cdbe9fa6f8da48f97e
     setTimeMs(m_anchorMs);
 }
 
@@ -79,7 +100,8 @@ void PreviewController::tick()
     if (!m_playing)
         return;
     qreal t = qreal(m_anchorMs) + qreal(m_elapsed.elapsed());
-    qint64 playbackEnd = m_durationMs;
+    const qint64 dur = durationMs();
+    qint64 playbackEnd = dur;
     if (m_project && m_project->trimOutMs() > m_project->trimInMs())
         playbackEnd = qMin(playbackEnd, m_project->trimOutMs());
     if (playbackEnd > 0 && t >= playbackEnd) {
@@ -88,8 +110,8 @@ void PreviewController::tick()
         emit playbackRangeEnded();
         return;
     }
-    if (m_durationMs > 0 && t > m_durationMs)
-        t = m_durationMs;
+    if (dur > 0 && t > dur)
+        t = dur;
     setTimeMs(t);
 }
 

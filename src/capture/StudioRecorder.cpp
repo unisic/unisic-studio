@@ -108,7 +108,9 @@ void StudioRecorder::start(bool holdForCommit)
     // already moved its raw out, so only crash debris matches.
     {
         QDir cache(QStandardPaths::writableLocation(QStandardPaths::CacheLocation));
-        const QStringList stale = cache.entryList({QStringLiteral("unisic-studio-rec-*")}, QDir::Files);
+        const QStringList stale = cache.entryList({QStringLiteral("unisic-studio-rec-*"),
+                                                   QStringLiteral("unisic-studio-webcam-*")},
+                                                  QDir::Files);
         for (const QString &f : stale)
             cache.remove(f);
     }
@@ -392,6 +394,19 @@ void StudioRecorder::beginEncoding(const QSize &streamSize)
     // motion from t0 onward is recorded.
     if (m_grabber)
         m_grabber->takeCursorSamples();
+    // Snapshot the newest pre-roll frame's seq: the grabber ran through the
+    // whole countdown, so at the first sampler tick latestFrame() would hand
+    // back a STALE frame (typically the countdown pill repaint) whose pts also
+    // predates commit — it would become frame 0 AND poison t0, shifting every
+    // cursor/click timestamp. sampleFrame() skips it until fresh damage arrives.
+    m_preRollSeq = 0;
+    m_awaitFreshFrame = false;
+    if (m_grabber) {
+        QByteArray preFrame;
+        qint64 prePts = 0;
+        if (m_grabber->latestFrame(preFrame, &m_preRollSeq, &prePts))
+            m_awaitFreshFrame = true;
+    }
 #endif
     m_cursorDrain.start();
 
@@ -435,10 +450,22 @@ void StudioRecorder::sampleFrame()
     quint64 seq = 0;
     qint64 pts = 0;
     if (!m_paused && m_grabber->latestFrame(frame, &seq, &pts) && frame.size() == expected) {
+        // Pre-roll guard: this is still the frame delivered BEFORE commit (the
+        // countdown pill). Wait briefly for fresh damage; after 500 ms accept
+        // the held frame anyway (a truly static screen delivers nothing new).
+        bool staleFrame = false;
+        if (m_awaitFreshFrame) {
+            if (seq == m_preRollSeq) {
+                if (m_elapsed.elapsed() < 500)
+                    return;
+                staleFrame = true;   // its pts predates commit — unusable for t0
+            }
+            m_awaitFreshFrame = false;
+        }
         if (!m_haveT0) {
             // t0 = pts of the FIRST sampled frame. Fallback to CLOCK_MONOTONIC now
             // if the kit did not stamp a pts (0) — same clock, sub-frame skew only.
-            m_t0MonoNs = pts > 0 ? pts : nowMonoNs();
+            m_t0MonoNs = (pts > 0 && !staleFrame) ? pts : nowMonoNs();
             m_haveT0 = true;
         }
         if (seq == m_lastSampledSeq && !m_lastFrame.isEmpty()) {
@@ -548,6 +575,7 @@ void StudioRecorder::stop()
         emit paused(false);
     }
     m_state = Finalizing;
+    emit finalizing();
     m_sampler.stop();
     m_maxTimer.stop();
     m_elapsedTick.stop();
@@ -653,6 +681,20 @@ void StudioRecorder::onEncoderFinished(int, bool)
     maybeExcise([this] { finalize(); });
 }
 
+// Preserve the just-finished raw capture after a finalize failure. Moved next to
+// the intended destination: left in the cache it would match the crash-debris
+// sweep on the next start() and be silently deleted. Clears m_rawMasterPath so
+// the fail()→cancel() cleanup can't remove it; returns the path that survives.
+QString StudioRecorder::rescueRawMaster()
+{
+    const QString raw = m_rawMasterPath;
+    m_rawMasterPath.clear();
+    const QString rescue = m_masterPath + QStringLiteral(".raw.mkv");
+    if (!m_masterPath.isEmpty() && moveFile(raw, rescue))
+        return rescue;
+    return raw;
+}
+
 void StudioRecorder::maybeExcise(std::function<void()> then)
 {
     const QList<QPair<qint64, qint64>> videoMsRanges =
@@ -660,8 +702,10 @@ void StudioRecorder::maybeExcise(std::function<void()> then)
 
     if (videoMsRanges.isEmpty()) {
         if (!moveFile(m_rawMasterPath, m_masterPath)) {
-            QFile::remove(m_rawMasterPath);
-            fail(tr("Could not move the recording into the projects folder"));
+            // NEVER delete the just-finished capture on a finalize failure —
+            // point the user at the surviving raw file instead.
+            fail(tr("Could not move the recording into the projects folder. "
+                    "The raw capture was kept at %1").arg(rescueRawMaster()));
             return;
         }
         then();
@@ -684,9 +728,9 @@ void StudioRecorder::maybeExcise(std::function<void()> then)
                 conv->deleteLater();
                 if (code != 0 || st == QProcess::CrashExit || !QFileInfo::exists(m_masterPath)) {
                     qWarning() << out;
-                    QFile::remove(m_masterPath);
-                    QFile::remove(m_rawMasterPath);
-                    fail(tr("Removing the paused sections failed"));
+                    QFile::remove(m_masterPath);   // partial excise output only
+                    fail(tr("Removing the paused sections failed. "
+                            "The raw capture was kept at %1").arg(rescueRawMaster()));
                     return;
                 }
                 QFile::remove(m_rawMasterPath);
@@ -698,16 +742,16 @@ void StudioRecorder::maybeExcise(std::function<void()> then)
         m_converter = nullptr;
         conv->deleteLater();
         QFile::remove(m_masterPath);
-        QFile::remove(m_rawMasterPath);
-        fail(tr("ffmpeg could not be started. Is it installed?"));
+        fail(tr("ffmpeg could not be started. The raw capture was kept at %1")
+                 .arg(rescueRawMaster()));
     });
     conv->start(QStringLiteral("ffmpeg"), args);
     if (!conv->waitForStarted(3000) && m_converter == conv) {
         m_converter = nullptr;
         conv->deleteLater();
         QFile::remove(m_masterPath);
-        QFile::remove(m_rawMasterPath);
-        fail(tr("ffmpeg could not be started. Is it installed?"));
+        fail(tr("ffmpeg could not be started. The raw capture was kept at %1")
+                 .arg(rescueRawMaster()));
     }
 }
 

@@ -547,10 +547,13 @@ void KeyframeEngineTest::nonMatchingAspectRects()
     click(clk, 3300, 920, 510);
 
     const qint64 dur = 8000;
-    // Square output out of a 16:9 source: zoom rects must carry a 1:1 pixel
-    // aspect even though the full-frame rects stay 16:9.
+    // Square output out of a 16:9 source, FIT (letterbox) mode: the video card
+    // keeps the SOURCE shape, so zoom rects must carry the source pixel aspect
+    // — an output-aspect (1:1) rect would render stretched into the
+    // source-aspect region. (Fill mode owns the output-aspect rects; see
+    // fillModeBaseRectAspect.)
     const auto kfs = KeyframeEngine::generate(cur, clk, kVideo, dur, "1:1", {});
-    checkInvariants(kfs, dur, 1.0);
+    checkInvariants(kfs, dur, kW / kH);
 }
 
 void KeyframeEngineTest::fillModeBaseRectAspect()
@@ -771,7 +774,6 @@ void KeyframeEngineTest::paramsJsonRoundtrip()
     p.zoomMax = 3.1;
     p.leadInMs = 777;
     p.deadZoneFrac = 0.42;
-    p.idleSpeedFracPerSec = 0.033;
     p.zoomIntensity = 0.37;
     p.motionSmoothness = 0.91;
 
@@ -783,8 +785,6 @@ void KeyframeEngineTest::paramsJsonRoundtrip()
     QCOMPARE(r.zoomInMs, p.zoomInMs);
     QCOMPARE(r.zoomOutMs, p.zoomOutMs);
     QCOMPARE(r.minHoldMs, p.minHoldMs);
-    QCOMPARE(r.idleAfterMs, p.idleAfterMs);
-    QCOMPARE(r.idleSpeedFracPerSec, p.idleSpeedFracPerSec);
     QCOMPARE(r.zoomMin, p.zoomMin);
     QCOMPARE(r.zoomMax, p.zoomMax);
     QCOMPARE(r.marginFrac, p.marginFrac);

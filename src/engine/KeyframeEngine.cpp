@@ -20,8 +20,6 @@ QJsonObject KeyframeEngine::Params::toJson() const
         {"zoomInMs", zoomInMs},
         {"zoomOutMs", zoomOutMs},
         {"minHoldMs", minHoldMs},
-        {"idleAfterMs", idleAfterMs},
-        {"idleSpeedFracPerSec", idleSpeedFracPerSec},
         {"zoomMin", zoomMin},
         {"zoomMax", zoomMax},
         {"marginFrac", marginFrac},
@@ -46,8 +44,6 @@ KeyframeEngine::Params KeyframeEngine::Params::fromJson(const QJsonObject &o)
     p.zoomInMs = i("zoomInMs", p.zoomInMs);
     p.zoomOutMs = i("zoomOutMs", p.zoomOutMs);
     p.minHoldMs = i("minHoldMs", p.minHoldMs);
-    p.idleAfterMs = i("idleAfterMs", p.idleAfterMs);
-    p.idleSpeedFracPerSec = d("idleSpeedFracPerSec", p.idleSpeedFracPerSec);
     p.zoomMin = d("zoomMin", p.zoomMin);
     p.zoomMax = d("zoomMax", p.zoomMax);
     p.marginFrac = d("marginFrac", p.marginFrac);
@@ -594,7 +590,15 @@ QVector<Span> shapeSpans(const QVector<Segment> &segs, const Params &p, qint64 d
                              / evidence;
             prev.evidenceCount = evidence;
             prev.end = std::max(prev.end, s.end);
-            prev.bbox = prev.bbox.united(s.bbox);
+            // Not united(): Qt treats a 0-size rect (single-click bbox, dwell
+            // point) as null and drops it from the union, which would silently
+            // discard that click's position from the merged framing.
+            QRectF u = prev.bbox;
+            u.setLeft(std::min(u.left(), s.bbox.left()));
+            u.setTop(std::min(u.top(), s.bbox.top()));
+            u.setRight(std::max(u.right(), s.bbox.right()));
+            u.setBottom(std::max(u.bottom(), s.bbox.bottom()));
+            prev.bbox = u;
             prev.dwell = prev.dwell && s.dwell;
             prev.clickTimes += s.clickTimes;
         } else {
@@ -606,7 +610,10 @@ QVector<Span> shapeSpans(const QVector<Segment> &segs, const Params &p, qint64 d
         const qint64 minEnd = s.start + p.zoomInMs + p.minHoldMs;
         if (s.end < minEnd)
             s.end = minEnd;
-        if (s.end > durationMs)
+        // The zoom-out animation runs to s.end + zoomOutMs; pull the span in
+        // whenever THAT would overrun the clip, or the export ends frozen
+        // mid-zoom-out for any interaction near the clip end.
+        if (s.end + p.zoomOutMs > durationMs)
             s.end = std::max(s.start + p.zoomInMs, durationMs - p.zoomOutMs);
     }
     return spans;
@@ -956,7 +963,11 @@ QVector<Keyframe> KeyframeEngine::generate(const CursorTrack &cursor,
     const double H = videoSize.height() > 0 ? videoSize.height() : 1.0;
 
     Geometry g;
-    g.init(W, H, aspectRatio(aspect, W / H));
+    // Camera rects display stretched-to-fill the composition's video region:
+    // OUTPUT-aspect in fill mode, but SOURCE-aspect in fit mode (the letterboxed
+    // card keeps the source shape) — an output-aspect rect there would render
+    // every zoom stretched by outputAspect/sourceAspect.
+    g.init(W, H, params.fill ? aspectRatio(aspect, W / H) : W / H);
 
     const Cam cam = buildCam(cursor, W, H);
 
@@ -965,6 +976,7 @@ QVector<Keyframe> KeyframeEngine::generate(const CursorTrack &cursor,
     bool anyDown = false;
     for (const ClickEvent &e : clicks.events())
         if (e.state == ClickEvent::Down) { anyDown = true; break; }
+<<<<<<< HEAD
     if (anyDown) {
         segs = clusterClicks(clicks, params, W, H, durationMs);
         // Drive-by suppression (see kPostClickDwellMs): drop lone clicks the
@@ -990,6 +1002,14 @@ QVector<Keyframe> KeyframeEngine::generate(const CursorTrack &cursor,
         if (segs.isEmpty())
             segs = dwellSegments(cam, params, durationMs);
     } else {
+=======
+    if (anyDown)
+        segs = clusterClicks(clicks, params, W, H);
+    // Dwell fallback also when every click landed outside the captured stream
+    // (global libinput clicks on another monitor) — clusterClicks filtered them
+    // all away and an empty segs would otherwise disable auto-zoom entirely.
+    if (segs.isEmpty())
+>>>>>>> 14d89856a8754caa94ca67cdbe9fa6f8da48f97e
         segs = dwellSegments(cam, params, durationMs);
     }
     // Typing activity is dwell evidence: fold each burst in as a dwell segment
@@ -1132,8 +1152,11 @@ QVector<Keyframe> KeyframeEngine::generate(const CursorTrack &cursor,
         filtered.reserve(out.size());
         for (const Keyframe &k : out) {
             bool inside = false;
-            for (const auto &w : windows)
-                if (k.tMs > w.first && k.tMs < w.second) { inside = true; break; }
+            // Never drop the t=0 opener: it seeds the initial framing (fill
+            // mode would otherwise open letterboxed until the first keyframe).
+            if (k.tMs > 0)
+                for (const auto &w : windows)
+                    if (k.tMs > w.first && k.tMs < w.second) { inside = true; break; }
             if (!inside)
                 filtered.append(k);
         }
