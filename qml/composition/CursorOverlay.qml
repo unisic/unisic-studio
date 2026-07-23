@@ -55,6 +55,15 @@ Item {
     // editor's fit-to-viewport upscale with headroom to spare.
     readonly property real _ptrSuper: 3
 
+    // Supersample for the RECORDED bitmap cursor ("system" style). The shape is a
+    // small compositor capture (typically 24–32 px), so once cursorScale/zoom
+    // enlarge it there is no more detail — but a single high-quality resample to
+    // this many source texels (vs the old fixed 2x, which upscaled to 64 px and
+    // then let QML resample AGAIN) keeps the enlarged bitmap as smooth as its
+    // native resolution allows. Constant, so the texture is not reallocated per
+    // frame. For a truly crisp pointer at any zoom, use the vector "pointer" style.
+    readonly property real _sysSuper: 4
+
     // Soft expanding highlight + clean ring. Geometry is camera-compensated, so
     // both remain circular and equally weighted in the final frame.
     Repeater {
@@ -140,6 +149,15 @@ Item {
             shadowEnabled: true
             shadowColor: Qt.rgba(0, 0, 0, 1)
             shadowBlur: 0.55
+            // blurMax is an ABSOLUTE radius in source (FBO) pixels and defaults
+            // to 32 — i.e. ~17.6 px of blur at shadowBlur 0.55 no matter how big
+            // the pointer is. On a cursor only ~15 px tall that smeared the whole
+            // arrow into a featureless grey square (the "blurry cursor" bug); it
+            // only looked acceptable once the pointer was large enough to out-
+            // scale it. Tie the radius to the pointer's own FBO height so the
+            // shadow stays proportional — identical look at every cursor size,
+            // zoom level and export resolution.
+            blurMax: Math.max(2, Math.round(overlay._ptrH * overlay._ptrSuper * 0.30))
             shadowVerticalOffset: Math.max(0.5, overlay._ptrH * 0.035)
             shadowOpacity: 0.30
         }
@@ -158,8 +176,8 @@ Item {
         opacity: overlay._cursorOpacity
         source: overlay.cursorData ? overlay.cursorData.shapeUrl : ""
         sourceSize: overlay.cursorData
-                    ? Qt.size(overlay.cursorData.shapeWidth * 2,
-                              overlay.cursorData.shapeHeight * 2)
+                    ? Qt.size(Math.round(overlay.cursorData.shapeWidth * overlay._sysSuper),
+                              Math.round(overlay.cursorData.shapeHeight * overlay._sysSuper))
                     : Qt.size(0, 0)
         width: overlay.cursorData
                ? overlay.cursorData.shapeWidth * screenScale * overlay._pressScale : 0
