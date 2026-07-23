@@ -629,7 +629,6 @@ void StudioApp::generateZoom(StudioProject *project, bool onlyIfEmpty)
         return;
     ZoomTimeline *zoom = project->zoom();
 
-<<<<<<< HEAD
     const QString aspectNow =
         project->style() ? project->style()->aspect() : QStringLiteral("source");
 
@@ -664,29 +663,6 @@ void StudioApp::generateZoom(StudioProject *project, bool onlyIfEmpty)
         QJsonObject ap = zoom->autoParams();
         ap.insert(QLatin1String("genAspect"), aspectNow);
         zoom->setAutoParams(ap);
-=======
-    // Re-frame kept (Manual/locked) keyframes to the CURRENT rect aspect first:
-    // their stored rects encode the aspect at creation time, and after an
-    // aspect or fill-mode switch a stale-shaped rect renders the screen content
-    // stretched by oldAspect/newAspect (preview and export share the
-    // composition). Keeps each keyframe's center and zoom level. Runs BEFORE
-    // the cursor-track early-out: an imported clip has no cursor track but its
-    // manual zooms go just as stale on an aspect switch.
-    if (!onlyIfEmpty) {
-        const QString rectAspect = rectAspectFor(project);
-        const auto kfs = zoom->keyframes();
-        for (int i = 0; i < kfs.size(); ++i) {
-            const auto &kf = kfs.at(i);
-            if (kf.source != ZoomTimeline::Manual && !kf.locked)
-                continue;                       // regen replaces it anyway
-            const double z =
-                KeyframeEngine::zoomOfRect(project->videoSize(), rectAspect, kf.rect);
-            const QRectF fixed = KeyframeEngine::cameraRect(project->videoSize(), rectAspect,
-                                                            kf.rect.center(), z);
-            if (fixed != kf.rect)
-                zoom->setKeyframeRect(i, fixed);
-        }
->>>>>>> 14d89856a8754caa94ca67cdbe9fa6f8da48f97e
     }
 
     if (project->cursorTrack().isEmpty())

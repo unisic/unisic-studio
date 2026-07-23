@@ -354,20 +354,16 @@ void RenderPipeline::startEncoder()
         else
             args << QStringLiteral("-c:a") << QStringLiteral("aac") << QStringLiteral("-b:a")
                  << QStringLiteral("192k");
-<<<<<<< HEAD
         // Clip volume < 1 → linear gain on the (re-encoded anyway) audio. The
         // same scale the preview's AudioOutput.volume applies. A no-op when the
         // optional 1:a:0? map matched nothing (per-stream filters need a stream).
         if (m_s.audioVolume < 0.9995)
             args << QStringLiteral("-af")
                  << QStringLiteral("volume=%1").arg(QString::number(m_s.audioVolume, 'f', 4));
-        args << QStringLiteral("-shortest") << m_s.outputPath;
-=======
         // No -shortest: both streams are already bounded (-ss/-t on the master,
         // the pipe delivers exactly durMs*fps frames) — with it, a master whose
         // audio track is shorter than the video would truncate the whole export.
         args << m_s.outputPath;
->>>>>>> 14d89856a8754caa94ca67cdbe9fa6f8da48f97e
     }
 
     m_encoder = new QProcess;

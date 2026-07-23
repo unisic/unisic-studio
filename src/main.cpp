@@ -165,7 +165,6 @@ int main(int argc, char *argv[])
     // environmental no-peer case falls through to a fresh instance.
     const QString serverName = singleInstanceServerName();
     auto *server = new QLocalServer(&app);
-<<<<<<< HEAD
     // `--stop` is a control ping, not a launch: forward "stop" to the running
     // instance so it ends any live recording, then exit. Wayland has no reliable
     // global key grab for an unfocused app (the portal GlobalShortcuts backend on
@@ -188,10 +187,7 @@ int main(int argc, char *argv[])
         sendToExistingInstance(serverName, QByteArray("cancel\n"));
         return 0;
     }
-    if (!isolatedMotionTest) {
-=======
     if (!isolatedMotionTest && !devAidMode) {
->>>>>>> 14d89856a8754caa94ca67cdbe9fa6f8da48f97e
         if (notifyExistingInstance(serverName, fileToOpen))
             return 0;
         // listen() FIRST, without removing the socket: an unconditional

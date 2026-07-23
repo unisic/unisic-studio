@@ -976,7 +976,6 @@ QVector<Keyframe> KeyframeEngine::generate(const CursorTrack &cursor,
     bool anyDown = false;
     for (const ClickEvent &e : clicks.events())
         if (e.state == ClickEvent::Down) { anyDown = true; break; }
-<<<<<<< HEAD
     if (anyDown) {
         segs = clusterClicks(clicks, params, W, H, durationMs);
         // Drive-by suppression (see kPostClickDwellMs): drop lone clicks the
@@ -1002,14 +1001,6 @@ QVector<Keyframe> KeyframeEngine::generate(const CursorTrack &cursor,
         if (segs.isEmpty())
             segs = dwellSegments(cam, params, durationMs);
     } else {
-=======
-    if (anyDown)
-        segs = clusterClicks(clicks, params, W, H);
-    // Dwell fallback also when every click landed outside the captured stream
-    // (global libinput clicks on another monitor) — clusterClicks filtered them
-    // all away and an empty segs would otherwise disable auto-zoom entirely.
-    if (segs.isEmpty())
->>>>>>> 14d89856a8754caa94ca67cdbe9fa6f8da48f97e
         segs = dwellSegments(cam, params, durationMs);
     }
     // Typing activity is dwell evidence: fold each burst in as a dwell segment

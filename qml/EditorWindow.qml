@@ -362,15 +362,10 @@ Window {
         onActivated: editorWindow.addZoomAtHead()
     }
     Shortcut { // Esc deselects the current keyframe (dialogs handle their own Esc).
-<<<<<<< HEAD
         // Explicit "Escape" alongside StandardKey.Cancel: the platform theme may
         // leave Cancel unbound, and this is the primary way OUT of edit mode.
         sequences: [StandardKey.Cancel, "Escape"]
-        enabled: editorWindow.selectedKeyframe >= 0
-=======
-        sequence: StandardKey.Cancel
         enabled: !editorWindow.modalOpen && editorWindow.selectedKeyframe >= 0
->>>>>>> 14d89856a8754caa94ca67cdbe9fa6f8da48f97e
         onActivated: editorWindow.selectedKeyframe = -1
     }
     Shortcut { // Ctrl+E opens the export dialog.
@@ -621,16 +616,12 @@ Window {
                     project: editorProject
                     index: editorWindow.selectedKeyframe
                     sourceAspect: editorWindow.srcAspect
-<<<<<<< HEAD
-                    outputAspect: editorWindow.outputAspect
-                    viewRect: comp._effZoom
-=======
                     // Rects render stretched into the video region: output-aspect
                     // in fill mode, source-aspect in fit (letterbox) mode.
                     outputAspect: (editorProject && editorProject.style
                                    && editorProject.style.fillMode === "fit")
                                   ? editorWindow.srcAspect : editorWindow.outputAspect
->>>>>>> 14d89856a8754caa94ca67cdbe9fa6f8da48f97e
+                    viewRect: comp._effZoom
                     onDeselectRequested: editorWindow.selectedKeyframe = -1
                 }
             }
