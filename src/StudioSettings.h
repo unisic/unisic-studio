@@ -114,7 +114,12 @@ public:
     // capture, so this is the honest burn-in mitigation. Default ON.
     U_SETTING(bool, hudCollapseWhileRecording, setHudCollapseWhileRecording, "hudCollapseWhileRecording", true)
     U_SETTING(QString, hudPlacement, setHudPlacement, "hudPlacement", QStringLiteral("bottomCenter"))
-    U_SETTING(bool, hudHideWhileRecording, setHudHideWhileRecording, "hudHideWhileRecording", true)
+    // Fully destroy the HUD while recording (zero burn-in; you then drive
+    // stop/pause/cancel through bound `unisic-studio --stop` hotkeys). Default
+    // OFF: it OVERRIDES the collapse-to-sliver indicator above, so shipping it
+    // ON left a live recording with no on-screen indicator at all — the user
+    // couldn't tell capture was running. Opt in only if you want zero burn-in.
+    U_SETTING(bool, hudHideWhileRecording, setHudHideWhileRecording, "hudHideWhileRecording", false)
     // Webcam: default OFF (opt-in, privacy). Device is a v4l2 path.
     U_SETTING(bool, recordWebcam, setRecordWebcam, "recordWebcam", false)
     U_SETTING(QString, webcamDevice, setWebcamDevice, "webcamDevice", QStringLiteral("/dev/video0"))
