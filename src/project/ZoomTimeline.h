@@ -125,9 +125,6 @@ signals:
 private:
     // Row of the first keyframe with tMs > t (the sorted-insert position).
     int insertionRow(qint64 t) const;
-    // Lock an unlocked Auto keyframe the user just edited so regeneration
-    // cannot silently discard the edit.
-    void pinOnUserEdit(int index);
 
     QList<Keyframe> m_keyframes;
     QJsonObject m_autoParams;
