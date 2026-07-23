@@ -24,13 +24,27 @@ Item {
         ? ["media-record", "folder", "fill-color", "help-about", "applications-development"]
         : ["media-record", "folder", "fill-color", "help-about"]
 
-    // All nine selectable themes, "system" first (it follows the desktop scheme).
-    readonly property var themeIds: ["system", "unisic", "dark", "light",
-                                     "catppuccin-mocha", "catppuccin-latte",
-                                     "dracula", "nord", "gruvbox"]
-    readonly property var themeNames: [qsTr("System"), "Unisic", qsTr("Dark"), qsTr("Light"),
-                                       "Catppuccin Mocha", "Catppuccin Latte",
-                                       "Dracula", "Nord", "Gruvbox"]
+    // Core themes first ("system" follows the desktop scheme), then every
+    // community theme the kit found in <config>/themes as a "custom:<file>" id.
+    // The decorative built-ins (Catppuccin/Dracula/Nord/Gruvbox, seeded there on
+    // first run) and any JSON the user drops in appear automatically, and the
+    // list hot-reloads because customThemes is a property binding.
+    readonly property var coreThemeIds: ["system", "unisic", "dark", "light"]
+    readonly property var coreThemeNames: [qsTr("System"), "Unisic", qsTr("Dark"), qsTr("Light")]
+    readonly property var themeIds: {
+        var ids = coreThemeIds.slice()
+        var custom = ThemeController.customThemes
+        for (var i = 0; i < custom.length; ++i)
+            ids.push(custom[i].id)
+        return ids
+    }
+    readonly property var themeNames: {
+        var names = coreThemeNames.slice()
+        var custom = ThemeController.customThemes
+        for (var i = 0; i < custom.length; ++i)
+            names.push(custom[i].name)
+        return names
+    }
 
     // Mirrors InputPermission::Status (StudioApp.inputPermissionStatus is that int,
     // or -1 before the first probe).
@@ -45,12 +59,15 @@ Item {
 
     // Three preview swatch colors for a theme id. The kit exposes no per-theme
     // seed API, so read them from the theme data directly: the live system palette
-    // for "system", else the private _defs map (falls back to the active Theme
-    // tokens if unavailable). Keeps zero palette hex in this file.
+    // for "system", the core _defs map for the built-ins, or ThemeController's
+    // customDefs for a "custom:<file>" id (falls back to the active Theme tokens
+    // if unavailable). Keeps zero palette hex in this file.
     function seedsFor(id) {
         if (id === "system")
             return [ThemeController.sysWindow, ThemeController.sysButton, ThemeController.sysAccent]
         var d = Theme._defs ? Theme._defs[id] : undefined
+        if (!d && id.indexOf("custom:") === 0)
+            d = ThemeController.customDefs[id]
         if (!d)
             return [Theme.primary, Theme.secondary, Theme.accent]
         return [d.primary, d.secondary, d.accent]
